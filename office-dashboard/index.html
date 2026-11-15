@@ -4,7 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=1280, initial-scale=1, user-scalable=no">
   <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#F2EEE6">
   <title>Office</title>
+  <script>
+    // Colour theme — applied before CSS so there's no flash. ?theme=<name> overrides and is remembered.
+    // Graphite at night (10 PM–6 AM) is applied here too, unless it was turned off.
+    (function () {
+      var t = null, auto = '1', m = /[?&]theme=([a-z]+)/.exec(location.search);
+      try {
+        if (m) localStorage.setItem('office.theme', m[1]);
+        t = localStorage.getItem('office.theme');
+        auto = localStorage.getItem('office.nightTheme') || '1';
+      } catch (e) { t = m && m[1]; }
+      var h = new Date().getHours();
+      if (auto === '1' && (h >= 22 || h < 6)) t = 'graphite';
+      if (t && t !== 'paper') document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Instrument+Serif:ital@0;1&display=swap">
@@ -12,18 +28,37 @@
 </head>
 <body>
   <div class="stage" id="stage">
-    <section class="left">
-      <div class="clock">
-        <div class="time"><span class="num" id="time"></span><span class="ampm" id="ampm"></span></div>
-        <div class="date"><b id="weekday"></b> <span class="serif" id="date"></span></div>
-      </div>
-      <div class="weather" id="weather"></div>
-    </section>
-    <section class="right">
-      <div class="next" id="next"></div>
-      <div class="agenda" id="agenda"></div>
-    </section>
+    <nav class="rail" id="rail" aria-label="Views">
+      <button class="rail-item" data-go="today"><svg class="i" width="26" height="26" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg><span>Today</span></button>
+      <button class="rail-item" data-go="calendar"><svg class="i" width="26" height="26" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Calendar</span></button>
+      <button class="rail-item" data-go="weather"><svg class="i" width="26" height="26" viewBox="0 0 24 24"><path d="M8.5 2.5v1.3M3.4 4.6l.9.9M1.8 9.6h1.3M13.6 4.6l-.9.9"/><path d="M5.3 12.3a4 4 0 0 1 6.9-4.4"/><path d="M9.5 20h8.3a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9 1.4A2.9 2.9 0 0 0 9.5 20z"/></svg><span>Weather</span></button>
+      <button class="rail-item" data-go="photos"><svg class="i" width="26" height="26" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg><span>Photos</span></button>
+      <button class="rail-clock" id="railClock" aria-label="Clock — press and hold for display settings"></button>
+    </nav>
+
+    <main class="views">
+      <section class="view" id="view-today">
+        <div class="today">
+          <section class="left">
+            <div class="clock">
+              <div class="time"><span class="num" id="time"></span><span class="ampm" id="ampm"></span></div>
+              <div class="date"><b id="weekday"></b> <span class="serif" id="date"></span></div>
+            </div>
+            <div class="weather" id="weather"></div>
+          </section>
+          <section class="right">
+            <div class="next" id="next"></div>
+            <div class="agenda" id="agenda"></div>
+          </section>
+        </div>
+      </section>
+      <section class="view" id="view-calendar"></section>
+      <section class="view" id="view-weather"></section>
+      <section class="view view--bleed" id="view-photos"></section>
+    </main>
+
     <div class="status" id="status"></div>
+    <div class="settings" id="settings"></div>
   </div>
 
   <script>
