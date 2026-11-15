@@ -1,0 +1,126 @@
+/* Target: Android WebView 106 at 1280x800. No nesting, color-mix(), oklch() or dvh. */
+:root {
+  --paper: #F2EEE6;
+  --card: #FBF9F4;
+  --ink: #111111;
+  --ink-2: #3B3934;
+  --mute: #7A756B;
+  --line: #D6CFC0;
+  --accent: #FFB000;
+  --accent-ink: #111111;
+  --alert: #E5261E;
+  --sans: 'Archivo', 'Roboto Condensed', 'Roboto', system-ui, sans-serif;
+  --serif: 'Instrument Serif', 'Noto Serif', Georgia, serif;
+  --r: 18px;
+}
+/* Night: dark and dim so the panel doesn't light up the office. */
+.stage.night {
+  --paper: #0B0B0B;
+  --card: #161514;
+  --ink: #CFC8BB;
+  --ink-2: #A39C90;
+  --mute: #6E685E;
+  --line: #2A2825;
+  --accent: #5A4520;
+  --accent-ink: #E9DFC9;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0B0B0B; }
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.num { font-stretch: 62%; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.serif { font-family: var(--serif); font-weight: 400; }
+.label {
+  font-size: 15px; font-weight: 700; font-stretch: 80%; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--mute);
+}
+
+.stage {
+  position: relative;
+  width: 1280px; height: 800px;
+  display: grid; grid-template-columns: 540px 1fr; gap: 24px;
+  padding: 28px 32px 36px;
+  background: var(--paper);
+  color: var(--ink);
+  transition: background .6s;
+}
+
+/* ------------------------------------------------------------------ left: clock + weather */
+.left { display: flex; flex-direction: column; min-width: 0; }
+.clock { padding-bottom: 18px; border-bottom: 4px solid var(--ink); }
+.time { display: flex; align-items: flex-start; line-height: .82; }
+.time .num { font-size: 168px; }
+.ampm { font-size: 30px; font-weight: 800; font-stretch: 80%; margin: 10px 0 0 10px; }
+.date { margin-top: 16px; font-size: 24px; display: flex; align-items: baseline; gap: 10px; }
+.date b { font-weight: 800; font-stretch: 80%; letter-spacing: .06em; text-transform: uppercase; }
+.date .serif { font-size: 30px; }
+
+.weather { flex: 1; display: flex; flex-direction: column; padding-top: 22px; min-height: 0; }
+.w-now { display: flex; align-items: center; gap: 18px; }
+.w-now .i { width: 84px; height: 84px; }
+.w-temp { font-size: 104px; line-height: .85; }
+.w-desc { display: flex; flex-direction: column; gap: 6px; }
+.w-desc .cond { font-size: 22px; font-weight: 800; font-stretch: 80%; letter-spacing: .06em; text-transform: uppercase; }
+.w-desc .hl { font-size: 20px; color: var(--ink-2); }
+.w-note { margin-top: 14px; font-size: 26px; color: var(--ink-2); }
+
+.w-hours { display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 20px; text-align: center; }
+.w-hours > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.w-hours .h { font-size: 15px; font-weight: 700; color: var(--mute); font-stretch: 80%; }
+.w-hours .i { width: 28px; height: 28px; }
+.w-hours .t { font-size: 22px; font-weight: 700; }
+.w-hours .p { font-size: 14px; color: #3A7BD5; font-weight: 700; min-height: 17px; }
+
+.w-days { margin-top: auto; display: flex; flex-direction: column; border-top: 2px solid var(--line); }
+.w-day { display: grid; grid-template-columns: 70px 34px 1fr 64px 64px; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 20px; }
+.w-day .d { font-weight: 800; font-stretch: 80%; letter-spacing: .06em; text-transform: uppercase; font-size: 17px; }
+.w-day .i { width: 30px; height: 30px; }
+.w-day .p { color: #3A7BD5; font-size: 16px; font-weight: 700; }
+.w-day .hi { font-weight: 800; text-align: right; }
+.w-day .lo { color: var(--mute); text-align: right; }
+
+.i { flex: none; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ------------------------------------------------------------------ right: next up + agenda */
+.right { display: flex; flex-direction: column; gap: 18px; min-width: 0; min-height: 0; }
+
+.next {
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: var(--r); padding: 22px 26px;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px 20px; align-items: end;
+  transition: background .6s;
+}
+.next.empty { background: var(--card); color: var(--ink-2); }
+.next .label { color: inherit; opacity: .75; grid-column: 1 / -1; }
+.next .title { font-family: var(--serif); font-size: 58px; line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next .meta { font-size: 20px; opacity: .85; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next .count { text-align: right; line-height: .85; }
+.next .count .num { font-size: 92px; }
+.next .count .u { display: block; font-size: 17px; font-weight: 800; letter-spacing: .1em; margin-top: 6px; }
+.next.now .count .num { font-size: 56px; }
+
+.agenda { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 14px; }
+.day { background: var(--card); border-radius: var(--r); padding: 14px 20px 10px; transition: background .6s; }
+.day-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.day-h .label { color: var(--ink); }
+.day-h .sub { font-size: 15px; color: var(--mute); }
+.ev { display: grid; grid-template-columns: 116px 1fr; gap: 14px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+.day-h + .ev { border-top: 0; }
+.ev .when { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.ev .what { font-size: 22px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev .where { font-size: 16px; color: var(--mute); font-weight: 400; margin-left: 8px; }
+.ev.past { opacity: .4; }
+.ev.current .when { color: var(--ink); }
+.ev.current .what::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--alert); margin-right: 10px; vertical-align: 3px; }
+.day .none { font-family: var(--serif); font-style: italic; font-size: 22px; color: var(--mute); padding: 4px 0 6px; }
+.day .more { font-size: 15px; color: var(--mute); font-weight: 700; padding: 4px 0 2px; }
+
+.status { position: absolute; right: 32px; bottom: 10px; font-size: 13px; color: var(--mute); }
+.status.stale { color: var(--alert); font-weight: 700; }

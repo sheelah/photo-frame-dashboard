@@ -1,0 +1,10 @@
+{
+  "name": "office-dashboard-sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Calendar sync job for the office dashboard; runs on the Linux box.",
+  "dependencies": {
+    "ical.js": "^2.2.1"
+  }
+}

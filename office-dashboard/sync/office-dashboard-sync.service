@@ -1,0 +1,16 @@
+# systemd user unit; install with `systemctl --user link` (see README.md).
+# Everything machine-specific (paths, Node, time zone, feed, Cloudflare) comes from the env file.
+[Unit]
+Description=Office dashboard calendar sync (iCal -> Workers KV)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/office-dashboard-sync.env
+# $NODE_CMD may be several words (e.g. "nvm-exec node"); systemd splits it.
+ExecStart=/usr/bin/env $NODE_CMD ${SYNC_DIR}/sync-calendar.js
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+TimeoutStartSec=3min

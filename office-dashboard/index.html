@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280, initial-scale=1, user-scalable=no">
+  <meta name="robots" content="noindex">
+  <title>Office</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Instrument+Serif:ital@0;1&display=swap">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="stage" id="stage">
+    <section class="left">
+      <div class="clock">
+        <div class="time"><span class="num" id="time"></span><span class="ampm" id="ampm"></span></div>
+        <div class="date"><b id="weekday"></b> <span class="serif" id="date"></span></div>
+      </div>
+      <div class="weather" id="weather"></div>
+    </section>
+    <section class="right">
+      <div class="next" id="next"></div>
+      <div class="agenda" id="agenda"></div>
+    </section>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    // Wall-display self-healing: if the bundle failed to load, reload until it starts.
+    setTimeout(function () { if (!window.OFFICE_READY) location.reload(); }, 15000);
+  </script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
