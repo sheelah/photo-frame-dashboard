@@ -53,8 +53,9 @@ The next timer run uses the new code.
 ```sh
 journalctl --user -u office-dashboard-sync -n 20     # "pushed N events ..." or "sync failed: ..."
 systemctl --user list-timers office-dashboard-sync.timer
-# Dry run with the real config (prints counts only, writes nothing):
-(set -a; . ~/.config/office-dashboard-sync.env; $NODE_CMD "$SYNC_DIR/sync-calendar.js" --dry-run)
+# Dry run with the service's exact environment (prints counts only, writes nothing):
+systemd-run --user --quiet --wait --pipe -p EnvironmentFile=$HOME/.config/office-dashboard-sync.env \
+  bash -c 'exec $NODE_CMD "$SYNC_DIR/sync-calendar.js" --dry-run'
 ```
 
 Logs never include event titles, locations or feed URLs.

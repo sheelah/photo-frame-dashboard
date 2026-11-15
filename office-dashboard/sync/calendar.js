@@ -3,6 +3,10 @@
 import ICAL from 'ical.js';
 
 const DAY = 86400000;
+// An occurrence starting this long before the window can still overlap it (multi-week events).
+const LOOKBACK = 31 * DAY;
+// Per-series iteration cap: a daily series since 2001 needs ~9,500 steps; this only stops runaway rules.
+const MAX_STEPS = 200000;
 
 // Expands the given iCal documents into { updated, events } for the window the page shows.
 export function buildCalendar(icsTexts, now = Date.now()) {
@@ -53,22 +57,41 @@ export function expand(ics, from, to) {
 
   for (const ve of vevents) {
     if (ve.hasProperty('recurrence-id')) continue;
-    const ev = new ICAL.Event(ve);
-    for (const ex of exceptions.get(ev.uid) || []) ev.relateException(ex);
+    // Pass the overrides explicitly: without `exceptions`, ical.js scans every VEVENT in the
+    // calendar for each event (O(n²), ~50 s on a 13k-event feed) and relates them across UIDs.
+    const ev = new ICAL.Event(ve, {
+      exceptions: exceptions.get(ve.getFirstPropertyValue('uid')) || [],
+      strictExceptions: true,
+    });
 
     if (!ev.isRecurring()) {
       push(ev, ev.startDate, ev.endDate);
       continue;
     }
+
+    // Series that ended long before the window: only a moved occurrence can still land in it.
+    const rule = ve.getFirstPropertyValue('rrule');
+    if (rule && rule.until && !ve.hasProperty('rdate') && timeMs(rule.until) < from - LOOKBACK) {
+      for (const ex of Object.values(ev.exceptions)) push(ex, ex.startDate, ex.endDate);
+      continue;
+    }
+
+    // The iterator must start at DTSTART, but stepping is cheap; full details (the costly part)
+    // are only built near the window or for occurrences with a RECURRENCE-ID override.
     const it = ev.iterator();
-    for (let next = it.next(), guard = 0; next && guard < 5000; next = it.next(), guard++) {
-      const t = next.isDate ? dateMs(next) : next.toUnixTime() * 1000;
+    for (let next = it.next(), guard = 0; next && guard < MAX_STEPS; next = it.next(), guard++) {
+      const t = timeMs(next);
       if (t >= to) break;
+      if (t < from - LOOKBACK && !ev.exceptions[next.toString()]) continue;
       const occ = ev.getOccurrenceDetails(next);
       push(occ.item, occ.startDate, occ.endDate);
     }
   }
   return out;
+}
+
+function timeMs(t) {
+  return t.isDate ? dateMs(t) : t.toUnixTime() * 1000;
 }
 
 // All-day dates have no zone; anchor them at UTC midnight for range checks only.
