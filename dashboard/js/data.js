@@ -21,12 +21,14 @@ window.DATA = (function () {
   var ALL = ['alex', 'jordan', 'maya', 'otto'];
 
   var people = [
-    { id: 'alex', name: 'Wes', color: '#2D5BFF', rgb: '45 91 255', ink: '#FFFFFF', home: false, status: 'Driving home', eta: 12 },
-    { id: 'jordan', name: 'Claudia', color: '#E4007C', rgb: '228 0 124', ink: '#FFFFFF', home: false, status: 'At the office' },
-    { id: 'maya', name: 'Buzzsaw', age: 10, color: '#00A36C', rgb: '0 163 108', ink: '#FFFFFF', home: true, status: 'Home' },
-    { id: 'otto', name: 'Skidmark', age: 6, color: '#FFB000', rgb: '255 176 0', ink: '#111111', home: true, status: 'Home' }
+    // muted palette: dusty blue, berry, sage, violet — all carry white text
+    { id: 'alex', name: 'Wes', color: '#4B6A9B', rgb: '75 106 155', ink: '#FFFFFF', home: false, status: 'Driving home', eta: 12 },
+    { id: 'jordan', name: 'Claudia', color: '#A65A7B', rgb: '166 90 123', ink: '#FFFFFF', home: false, status: 'At the office' },
+    { id: 'maya', name: 'Buzzsaw', age: 10, color: '#5B8A6E', rgb: '91 138 110', ink: '#FFFFFF', home: true, status: 'Home' },
+    { id: 'otto', name: 'Skidmark', age: 6, color: '#7A68A6', rgb: '122 104 166', ink: '#FFFFFF', home: true, status: 'Home' }
   ];
-  var family = { id: 'family', name: 'Family', color: '#111111', rgb: '17 17 17', ink: '#FFFFFF' };
+  // theme-aware: resolves to the active theme's ink/paper (see css/tokens.css)
+  var family = { id: 'family', name: 'Family', color: 'var(--ink)', rgb: 'var(--ink-rgb)', ink: 'var(--paper)' };
 
   // ---------------------------------------------------------------- calendar
   var events = [
@@ -312,7 +314,7 @@ window.DATA = (function () {
       tokens: 4.6, cost: 17.9, week: [3.1, 2.4, 5.2, 4.0, 2.2, 1.1, 4.6]
     },
     {
-      id: 'cursor', name: 'Cursor', plan: 'Pro+', color: '#111111', rgb: '17 17 17', status: 'ok',
+      id: 'cursor', name: 'Cursor', plan: 'Pro+', color: 'var(--ink)', rgb: 'var(--ink-rgb)', status: 'ok',
       meters: [
         { label: 'Included usage', win: MONTH, used: 76, left: 17280, detail: '$45.60 of $60' },
         { label: 'On-demand', win: MONTH, used: 16, left: 17280, detail: '$8.20 of $50 cap' }

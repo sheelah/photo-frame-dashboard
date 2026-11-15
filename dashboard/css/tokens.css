@@ -19,6 +19,17 @@
   --warm: #FFC45C;
   --warm-rgb: 255 196 92;
   --night: #D8321F;
+  --warn-ink: #B45F00;
+  --wet: #1F6FEB;
+
+  /* "slab": the inverted panel (toasts, climate, summary cards). Text on it is always light. */
+  --slab: var(--ink);
+  --on-slab: #FFFFFF;
+
+  /* device tiles */
+  --tile-lit: #FFF1D0;
+  --tile-blind: #E4EEFA;
+  --tile-blind-fill: #BFD6F2;
 
   /* person colour defaults (overridden inline per element) */
   --c: var(--ink);
@@ -45,4 +56,75 @@
   --tap: 64px;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* ---------------------------------------------------------------- themes
+   Set on <html data-theme="…">; chosen in the demo drawer (T cycles) or via ?theme=<name>.
+   Each theme only swaps the paper/ink family + a few tinted surfaces; signal and person
+   colours stay fixed so they keep their meaning. Default (no attribute) = "paper". */
+
+/* Heather: faint lavender paper, deep aubergine ink */
+:root[data-theme="heather"] {
+  --paper: #ECE8F1;
+  --paper-2: #DFD9E8;
+  --card: #F8F6FB;
+  --ink: #1E1530;
+  --ink-rgb: 30 21 48;
+  --ink-2: #3D3352;
+  --mute: #7A7189;
+  --line: #CCC4D9;
+  --tile-lit: #F7EFD6;
+  --tile-blind: #E6E6F5;
+  --tile-blind-fill: #C3C3E6;
+}
+
+/* Harbor: cool blue-grey paper, navy ink */
+:root[data-theme="harbor"] {
+  --paper: #E5EAF0;
+  --paper-2: #D5DDE7;
+  --card: #F6F8FB;
+  --ink: #0D1C33;
+  --ink-rgb: 13 28 51;
+  --ink-2: #2D3E58;
+  --mute: #67768B;
+  --line: #C1CCDA;
+  --tile-lit: #FBF0D6;
+  --tile-blind: #DFEAF7;
+  --tile-blind-fill: #B3CCEB;
+}
+
+/* Clay: warm terracotta-tinted paper, espresso ink */
+:root[data-theme="clay"] {
+  --paper: #F1E3D6;
+  --paper-2: #E6D2BF;
+  --card: #FBF4ED;
+  --ink: #2B150D;
+  --ink-rgb: 43 21 13;
+  --ink-2: #523428;
+  --mute: #8C6F60;
+  --line: #D9C0AB;
+  --warn-ink: #A4510A;
+  --tile-lit: #FCEBC8;
+  --tile-blind: #E9E5E4;
+  --tile-blind-fill: #C9D2DA;
+}
+
+/* Graphite: dark mode for evenings — paper and ink swap, slab becomes a raised panel */
+:root[data-theme="graphite"] {
+  --paper: #161719;
+  --paper-2: #232428;
+  --card: #1E1F22;
+  --ink: #EDE8DE;
+  --ink-rgb: 237 232 222;
+  --ink-2: #C3BDB1;
+  --mute: #8D887E;
+  --line: #36373C;
+  --slab: #2C2D32;
+  --on-slab: #F3EFE7;
+  --warn-ink: #F0A24A;
+  --wet: #6EA8FF;
+  --ok: #2DC48D;
+  --tile-lit: #3A3120;
+  --tile-blind: #1F2A38;
+  --tile-blind-fill: #2E4664;
 }

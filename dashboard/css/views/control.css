@@ -47,9 +47,9 @@
 .tile:not(.is-on) .tile-state.num { color: var(--mute); }
 .tile-state small { display: block; font-size: 13px; font-weight: 700; color: var(--mute); letter-spacing: .04em; text-transform: uppercase; }
 .tile--lock .tile-name { margin-top: 4px; }
-.tile--light.is-on { background: #FFF1D0; }
-.tile--blind .tile-fill { background: #BFD6F2; }
-.tile--blind.is-on { background: #E4EEFA; }
+.tile--light.is-on { background: var(--tile-lit); }
+.tile--blind .tile-fill { background: var(--tile-blind-fill); }
+.tile--blind.is-on { background: var(--tile-blind); }
 .tile--lock .tile-state, .tile--garage .tile-state { font-weight: 800; color: var(--ink); font-size: 19px; }
 .tile.is-warn { background: var(--amber); }
 .tile.is-warn .tile-icon { color: var(--ink); }
@@ -61,7 +61,7 @@
 .pend { position: absolute; right: 14px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--ink); z-index: 2; }
 
 /* climate */
-.hc-climate { background: var(--ink); color: #fff; border-radius: var(--r); padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.hc-climate { background: var(--slab); color: var(--on-slab); border-radius: var(--r); padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
 .th-main { display: flex; align-items: center; justify-content: space-between; }
 .th-btn { width: 84px; height: 84px; border-radius: 50%; background: rgba(255, 255, 255, .12); display: grid; place-items: center; }
 .th-btn:active { transform: scale(.9); background: rgba(255, 255, 255, .25); }

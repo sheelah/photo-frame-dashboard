@@ -10,6 +10,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Instrument+Serif:ital@0;1&display=swap">
+  <script>
+    // Colour theme — applied before CSS so there's no flash. ?theme=<name> overrides and is remembered.
+    (function () {
+      var t = null, m = /[?&]theme=([a-z]+)/.exec(location.search);
+      try { if (m) localStorage.setItem('hhq.theme', m[1]); t = localStorage.getItem('hhq.theme'); } catch (e) { t = m && m[1]; }
+      if (t && t !== 'paper') document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/views/home.css">
