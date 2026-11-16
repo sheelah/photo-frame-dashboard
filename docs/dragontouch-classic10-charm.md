@@ -130,9 +130,16 @@ forwards tailnet port 5555 to `adbd`. Scripts and install steps:
   why `adb-watchdog.sh` exists; a simulated `stop adbd` came back in ~2 minutes. After switching
   to the guest network, and after rebooting there, ADB over the tailnet stayed `offline`
   (TCP connects, no handshake) for a while with `adbd` still listening, then recovered by itself.
-- The Wi-Fi settings screen had no visible way back on the panel during a switch. Over the
-  tailnet, `adb shell input keyevent 3` returns to the kiosk (the only HOME app); otherwise
-  power-cycle. [kioskwatch](../scripts/kioskwatch/README.md) would do it automatically.
+- The Wi-Fi settings screen had no way back on the panel. Three findings (2026-11-16):
+  - `user_setup_complete` and `device_provisioned` were both `0`, and Android ignored the Home
+    key. With both set to `1` (owner-approved), `input keyevent 3` returns to the kiosk.
+  - The Home HQ navigation buttons never appeared. Settings → Accessibility says "No services
+    installed", `dumpsys accessibility` lists no services, and system_server writes
+    `accessibility_enabled` back to `0` within seconds. This happened with the same APK as the
+    repo build, and survived a reboot and a disable/enable of the service component. No log
+    line explains it. (The 2026-11-14 screenshot of the buttons came before this.)
+  - [kioskwatch](../scripts/kioskwatch/README.md) is the fix used: started from the Tailscale
+    `start.sh`, touchscreen `gslX680`. It returned from Wi-Fi settings after 122 s untouched.
 
 ## What was set up (all owner-approved writes)
 

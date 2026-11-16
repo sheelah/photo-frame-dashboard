@@ -16,6 +16,8 @@ Tested on a Dragon Touch Classic10 Charm (Android 6.0.1, Allwinner A33) with Tai
 - `adb-watchdog.sh`: every 60 s, if nothing has listened on TCP 5555 for 15 s
   (`/proc/net/tcp` and `tcp6`), it sets `service.adb.tcp.port=5555` and restarts `adbd`.
   Logs to `/data/local/tailscale/adb-watchdog.log` (rotated at 64 KB).
+- Optional: if `/data/local/tailscale/kioskwatch.sh` exists, `start.sh` starts it too. Copy it
+  from [scripts/kioskwatch](../kioskwatch/README.md); this needs no extra `/system` change.
 
 ## Install (root ADB on the LAN, owner approval for each write)
 
