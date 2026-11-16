@@ -114,6 +114,26 @@ Consequences:
   on the panel, not by screencap — injected touch does not prove input here, and screencaps
   alone do not either (README rule 9).
 
+## ADB over Tailscale
+
+To move the frame onto an isolated guest Wi-Fi without losing ADB, it runs `tailscaled` in
+userspace mode, started at boot from `/system/bin/install-recovery.sh`, and `tailscale serve`
+forwards tailnet port 5555 to `adbd`. Scripts and install steps:
+[scripts/android-tailscale](../scripts/android-tailscale/README.md). Observed:
+
+- The frame came back on Tailscale ~36 s after boot, with the serve forward kept. `tailscaled`
+  uses ~20 MB RSS.
+- On the guest network, ADB straight to the frame's LAN address timed out from the main LAN,
+  and Tailscale found a direct path as well as the relay.
+- **Wi-Fi changes upset `adbd`.** Once, after switching back to the main Wi-Fi, `adbd` stopped
+  listening on 5555 while `tailscaled` stayed healthy, and only a power-cycle fixed it. That's
+  why `adb-watchdog.sh` exists; a simulated `stop adbd` came back in ~2 minutes. After switching
+  to the guest network, and after rebooting there, ADB over the tailnet stayed `offline`
+  (TCP connects, no handshake) for a while with `adbd` still listening, then recovered by itself.
+- The Wi-Fi settings screen had no visible way back on the panel during a switch. Over the
+  tailnet, `adb shell input keyevent 3` returns to the kiosk (the only HOME app); otherwise
+  power-cycle. [kioskwatch](../scripts/kioskwatch/README.md) would do it automatically.
+
 ## What was set up (all owner-approved writes)
 
 | Change | Undo |
@@ -125,6 +145,7 @@ Consequences:
 | `pm disable com.waophoto.fota` (updater disabled while the frame is online) | `pm enable com.waophoto.fota` |
 | Optional and destructive: `pm clear net.frameo.frame` (wipes the setup name and all Frameo data; only needed to remove the boot "Welcome" screen). Then `pm disable net.frameo.frame` (kills its `BOOT_COMPLETED` autostart). The boot "Welcome" screen is gone after a reboot — owner-confirmed | `pm enable net.frameo.frame` (data is not restored; re-setup re-asks the name) |
 | `settings put global stay_on_while_plugged_in 7` (previous value `0`) | `adb shell settings put global stay_on_while_plugged_in 0` |
+| Tailscale in `/data/local/tailscale` (with `start.sh` and `adb-watchdog.sh`), one boot line in `/system/bin/install-recovery.sh`, `/system/etc/resolv.conf` added ([android-tailscale](../scripts/android-tailscale/README.md)) | restore `install-recovery.sh`, delete `resolv.conf`, `rm -r /data/local/tailscale`, reboot |
 
 The dashboard was verified rendering full-screen by screenshot after install. The clock
 was checked against the host twice (after install and after a reboot): correct date, time
@@ -143,5 +164,5 @@ remains installed and enabled; Frameo is disabled with its data cleared.
 - A second computer with a fresh ADB key (the no-key-check observation is one host only).
 - Whether other units from this listing ship this firmware.
 - Long-term behaviour beyond one owner reboot: FOTA staying disabled, the navigation
-  service surviving force-stops of the kiosk (it did survive one reboot), and network
-  ADB after a change of Wi-Fi network or DHCP address.
+  service surviving force-stops of the kiosk (it did survive one reboot), and why network
+  ADB goes `offline` for a while after a Wi-Fi change (see ADB over Tailscale).
