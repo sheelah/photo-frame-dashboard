@@ -114,6 +114,45 @@
     });
   };
 
+  // ------------------------------------------------------------ colour themes (palettes live in css/tokens.css)
+  App.themes = [
+    { id: 'paper', name: 'Paper', sw: ['#F2EEE6', '#111111'] },
+    { id: 'heather', name: 'Heather', sw: ['#ECE8F1', '#1E1530'] },
+    { id: 'harbor', name: 'Harbor', sw: ['#E5EAF0', '#0D1C33'] },
+    { id: 'clay', name: 'Clay', sw: ['#F1E3D6', '#2B150D'] },
+    { id: 'graphite', name: 'Graphite', sw: ['#161719', '#EDE8DE'] }
+  ];
+  // The saved theme is the "day" choice. While App.isNight() (10 PM–6 AM on the dashboard clock)
+  // Graphite is applied on top unless auto-night is turned off; the saved choice is left alone.
+  function load(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var chosen = load('hhq.theme', 'paper');
+  if (!App.themes.some(function (th) { return th.id === chosen; })) chosen = 'paper';  // e.g. a retired theme
+  var autoNight = load('hhq.nightTheme', '1') === '1';
+  App.theme = function () { return chosen; };
+  App.appliedTheme = function () { return document.documentElement.getAttribute('data-theme') || 'paper'; };
+  App.autoNight = function () { return autoNight; };
+  function apply() {
+    var id = autoNight && App.isNight() ? 'graphite' : chosen;
+    if (id === App.appliedTheme()) return;
+    var root = document.documentElement;
+    root.classList.add('theme-anim');
+    if (id === 'paper') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', id);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--paper').trim());
+    clearTimeout(apply.t);
+    apply.t = setTimeout(function () { root.classList.remove('theme-anim'); }, 400);
+    App.emit('theme', id);
+  }
+  App.setTheme = function (id) { chosen = id; save('hhq.theme', id); apply(); };
+  App.setAutoNight = function (on) { autoNight = on; save('hhq.nightTheme', on ? '1' : '0'); apply(); };
+  function cycleTheme() {
+    var ids = App.themes.map(function (t) { return t.id; });
+    App.setTheme(ids[(ids.indexOf(chosen) + 1) % ids.length]);
+  }
+  App.on('time', apply);   // demo clock jumps
+  App.on('ready', function () { apply(); setInterval(apply, 30000); });
+
   // ------------------------------------------------------------ demo drawer
   function demoHTML() {
     var t = App.now();
@@ -123,13 +162,21 @@
       '<button data-time="7:10">7:10 AM</button><button data-time="15:18">3:18 PM</button><button data-time="19:45">7:45 PM</button><button data-time="23:40">11:40 PM</button><button data-time="real">Real time</button></div></div>' +
       '<div class="demo-sec"><div class="label label--light">Modes</div><div class="demo-grid">' +
       '<button data-mode="ambient">Ambient</button><button data-mode="night">Night</button><button data-fastidle>' + (App.idle.home < 60 ? 'Idle: fast ✓' : 'Idle: fast') + '</button></div></div>' +
+      '<div class="demo-sec"><div class="label label--light">Colour theme</div><div class="demo-grid">' +
+      App.themes.map(function (th) {
+        return '<button data-theme="' + th.id + '" class="demo-theme' + (App.theme() === th.id ? ' is-on' : '') + '">' +
+          '<i style="background:linear-gradient(135deg,' + th.sw[0] + ' 50%,' + th.sw[1] + ' 50%)"></i>' + th.name + '</button>';
+      }).join('') +
+      '<button data-autonight class="' + (autoNight ? 'is-on' : '') + '">Graphite at night' + (autoNight ? ' ✓' : '') + '</button></div>' +
+      (autoNight && App.isNight() && chosen !== 'graphite' ? '<p class="demo-note">Night-time: showing Graphite until 6 AM, then ' + App.themes.filter(function (th) { return th.id === chosen; }).map(function (th) { return th.name; })[0] + '.</p>' : '') +
+      '</div>' +
       '<div class="demo-sec"><div class="label label--light">Alerts</div><div class="demo-grid">' +
       '<button data-alert="doorbell">Doorbell</button><button data-alert="leak">Water leak</button><button data-alert="garage">Garage open</button><button data-alert="package">Package</button></div></div>' +
       '<div class="demo-sec"><div class="label label--light">Calendar data</div><div class="demo-grid">' +
       ['normal', 'empty', 'busy'].map(function (m) {
         return '<button data-cal="' + m + '" class="' + (App.calMode === m ? 'is-on' : '') + '">' + { normal: 'Normal day', empty: 'Empty day', busy: 'Overloaded' }[m] + '</button>';
       }).join('') + '</div></div>' +
-      '<p class="demo-note">Keyboard: <b>D</b> demo · <b>A</b> ambient · <b>N</b> night · <b>1–7</b> views</p>' +
+      '<p class="demo-note">Keyboard: <b>D</b> demo · <b>A</b> ambient · <b>N</b> night · <b>T</b> theme · <b>1–7</b> views</p>' +
       '</div>';
   }
   App.openDemo = function () {
@@ -150,6 +197,8 @@
       return;
     }
     if (b.dataset.mode) { closeDemo(); App.setMode(b.dataset.mode); return; }
+    if (b.dataset.theme) { App.setTheme(b.dataset.theme); App.openDemo(); return; }
+    if (b.hasAttribute('data-autonight')) { App.setAutoNight(!autoNight); App.openDemo(); return; }
     if (b.hasAttribute('data-fastidle')) {
       var fast = App.idle.home >= 60;
       App.idle.home = fast ? 8 : 60;
@@ -174,6 +223,7 @@
       if (k === 'd') { $('#demo').classList.contains('is-open') ? closeDemo() : App.openDemo(); }
       if (k === 'a') App.setMode('ambient');
       if (k === 'n') App.setMode('night');
+      if (k === 't') { cycleTheme(); if ($('#demo').classList.contains('is-open')) App.openDemo(); }
       if (k === 'escape') { closeDemo(); App.closeSheet(); }
       var views = ['home', 'calendar', 'tasks', 'shopping', 'photos', 'control', 'agents'];
       if (k >= '1' && k <= '7') App.go(views[+k - 1]);

@@ -1,18 +1,17 @@
-// Office dashboard: clock, weather (Open-Meteo via /api/weather), Google Calendar (/api/calendar).
+// Office dashboard: a sidebar of views (Today, Calendar, Weather, Photos) over the same data —
+// weather (Open-Meteo via /api/weather) and the synced calendar (/api/calendar).
 import { icon, weatherInfo } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
 const MIN = 60000;
 const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
-const NIGHT_FROM = 21;   // dark, dim theme from 9 PM...
-const NIGHT_TO = 6.5;    // ...to 6:30 AM
 const STALE_AFTER = 20 * MIN;
+const IDLE_HOME = 2 * MIN;  // untouched this long on another view → back to Today
+const VIEWS = ['today', 'calendar', 'weather', 'photos'];
 
 // The kiosk opens /?k=<token>; pass it on API calls too, in case the cookie is lost.
 const params = new URLSearchParams(location.search);
 const token = params.get('k');
-const theme = params.get('theme'); // 'day' or 'night' forces a theme (for testing)
 const api = (path) => token ? `${path}?k=${encodeURIComponent(token)}` : path;
 
 const state = {
@@ -55,7 +54,40 @@ function fmtRange(ev) {
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// ------------------------------------------------------------------ clock + night mode
+// ------------------------------------------------------------------ colour themes
+// Same palettes as Home HQ (css/style.css). The saved theme is the day choice; from 10 PM to
+// 6 AM Graphite is shown on top unless "Graphite at night" is off. index.html applies the same
+// rule before first paint.
+
+const THEMES = [
+  { id: 'paper', name: 'Paper', sw: ['#F2EEE6', '#111111'] },
+  { id: 'heather', name: 'Heather', sw: ['#ECE8F1', '#1E1530'] },
+  { id: 'harbor', name: 'Harbor', sw: ['#E5EAF0', '#0D1C33'] },
+  { id: 'clay', name: 'Clay', sw: ['#F1E3D6', '#2B150D'] },
+  { id: 'graphite', name: 'Graphite', sw: ['#161719', '#EDE8DE'] },
+];
+function loadRaw(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
+function saveRaw(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
+let chosenTheme = loadRaw('office.theme', 'paper');
+if (!THEMES.some((t) => t.id === chosenTheme)) chosenTheme = 'paper';
+let autoNight = loadRaw('office.nightTheme', '1') === '1';
+
+function isNight(d = new Date()) { const h = d.getHours(); return h >= 22 || h < 6; }
+function applyTheme() {
+  const id = autoNight && isNight() ? 'graphite' : chosenTheme;
+  const root = document.documentElement;
+  if ((root.getAttribute('data-theme') || 'paper') === id) return;
+  root.classList.add('theme-anim');
+  if (id === 'paper') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', id);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--paper').trim());
+  clearTimeout(applyTheme.t);
+  applyTheme.t = setTimeout(() => root.classList.remove('theme-anim'), 400);
+}
+function setTheme(id) { chosenTheme = id; saveRaw('office.theme', id); applyTheme(); }
+function setAutoNight(on) { autoNight = on; saveRaw('office.nightTheme', on ? '1' : '0'); applyTheme(); }
+
+// ------------------------------------------------------------------ clock
 
 function renderClock() {
   const n = new Date();
@@ -63,9 +95,8 @@ function renderClock() {
   $('ampm').textContent = n.getHours() < 12 ? 'AM' : 'PM';
   $('weekday').textContent = WEEKDAY[n.getDay()];
   $('date').textContent = `${MONTH[n.getMonth()]} ${n.getDate()}`;
-  const h = n.getHours() + n.getMinutes() / 60;
-  const night = theme ? theme === 'night' : h >= NIGHT_FROM || h < NIGHT_TO;
-  $('stage').classList.toggle('night', night);
+  $('railClock').innerHTML = `<b>${fmtTime(n, false)}</b><span>${n.getHours() < 12 ? 'AM' : 'PM'}</span>`;
+  applyTheme();
 }
 
 // ------------------------------------------------------------------ weather
@@ -250,26 +281,229 @@ async function refresh(key) {
   renderAll();
 }
 
+// ------------------------------------------------------------------ calendar view: 7 days from today
+
+function renderCalendarView() {
+  const el = $('view-calendar');
+  if (!state.calendar) {
+    el.innerHTML = `<div class="v-head"><h1>This week</h1></div><div class="wx-empty">Waiting for calendar data.</div>`;
+    return;
+  }
+  const nowMs = Date.now();
+  const today = startOfDay(nowMs);
+  const last = addDays(today, 6);
+  const range = `${MONTH[new Date(today).getMonth()].slice(0, 3)} ${new Date(today).getDate()} – ${MONTH[new Date(last).getMonth()].slice(0, 3)} ${new Date(last).getDate()}`;
+  const cols = [];
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(today, i);
+    const d = new Date(day);
+    const { allDay, timed } = eventsOn(day);
+    const items = allDay.map((e) => ({ e, all: true })).concat(timed.map((e) => ({ e, all: false })));
+    const CAP = 7;
+    const cards = items.slice(0, CAP).map(({ e, all }) => {
+      const cls = all ? 'is-all' : e.end <= nowMs ? 'is-past' : e.start <= nowMs ? 'is-now' : '';
+      const when = all ? 'All day' : e.start < day ? 'Cont.' : fmtTime(e.start);
+      return `<div class="cal-ev ${cls}"><b>${when}</b><span>${esc(e.title)}</span></div>`;
+    }).join('');
+    const more = items.length > CAP ? `<div class="cal-more">+${items.length - CAP} more</div>` : '';
+    const none = items.length ? '' : `<div class="cal-none">Free</div>`;
+    cols.push(`<div class="cal-day ${i === 0 ? 'is-today' : ''}"><div class="cal-dh"><span class="label">${i === 0 ? 'Today' : WEEKDAY[d.getDay()].slice(0, 3)}</span><span class="num">${d.getDate()}</span></div>${cards}${none}${more}</div>`);
+  }
+  el.innerHTML = `<div class="cal"><div class="v-head"><h1>This week</h1><span class="sub">${range}</span></div><div class="cal-week">${cols.join('')}</div></div>`;
+}
+
+// ------------------------------------------------------------------ weather view: 12 hours + 6 days
+
+function renderWeatherView() {
+  const el = $('view-weather');
+  const W = state.weather;
+  if (!W || !W.current) { el.innerHTML = `<div class="v-head"><h1>Weather</h1></div><div class="wx-empty">Waiting for weather data.</div>`; return; }
+  const c = W.current, d = W.daily, h = W.hourly;
+  const now = weatherInfo(c.weather_code, c.is_day);
+  const nowMs = Date.now();
+
+  let first = h.time.findIndex((t) => new Date(t).getTime() + HOUR > nowMs);
+  if (first < 0) first = 0;
+  const end = Math.min(first + 12, h.time.length);
+  const temps = h.temperature_2m.slice(first, end);
+  const lo = Math.min(...temps), span = Math.max(1, Math.max(...temps) - lo);
+  const hours = [];
+  for (let i = first; i < end; i++) {
+    const info = weatherInfo(h.weather_code[i], h.is_day[i]);
+    const p = h.precipitation_probability[i];
+    const label = i === first ? 'NOW' : fmtTime(h.time[i]).replace(':00 ', '').replace('AM', 'A').replace('PM', 'P');
+    const bar = 24 + Math.round(((h.temperature_2m[i] - lo) / span) * 110);
+    hours.push(`<div class="wx-h"><span class="t">${Math.round(h.temperature_2m[i])}°</span><i class="wx-bar" style="height:${bar}px"></i>${icon(info.icon, 30)}<span class="p">${p >= 20 ? p + '%' : ''}</span><span class="h">${label}</span></div>`);
+  }
+
+  const days = [];
+  for (let i = 0; i < Math.min(6, d.time.length); i++) {
+    const info = weatherInfo(d.weather_code[i], 1);
+    const date = new Date(`${d.time[i]}T12:00`);
+    const p = d.precipitation_probability_max[i];
+    days.push(`<div class="wx-day"><span class="d">${i === 0 ? 'Today' : WEEKDAY[date.getDay()].slice(0, 3)}</span>${icon(info.icon, 34)}<span class="p">${p >= 20 ? p + '%' : ''}</span><span class="hi">${Math.round(d.temperature_2m_max[i])}°</span><span class="lo">${Math.round(d.temperature_2m_min[i])}°</span></div>`);
+  }
+  const sun = (k) => (d[k] && d[k][0] ? fmtTime(d[k][0]) : '–');
+
+  el.innerHTML =
+    `<div class="wx">` +
+      `<div class="wx-now">${icon(now.icon, 120)}<span class="num w-temp">${Math.round(c.temperature_2m)}°</span>` +
+        `<div class="w-desc"><span class="cond">${esc(now.label)}</span>` +
+        `<span class="hl">H ${Math.round(d.temperature_2m_max[0])}° · L ${Math.round(d.temperature_2m_min[0])}°</span>` +
+        `<span class="hl">Feels ${Math.round(c.apparent_temperature)}° · Wind ${Math.round(c.wind_speed_10m)} mph</span>` +
+        `<span class="hl serif">${esc(weatherNote(W))}</span></div></div>` +
+      `<div class="wx-sun"><div><span class="label">Sunrise</span><b>${sun('sunrise')}</b></div><div><span class="label">Sunset</span><b>${sun('sunset')}</b></div></div>` +
+      `<div class="wx-hours"><span class="label">Next 12 hours</span><div class="wx-hgrid">${hours.join('')}</div></div>` +
+      `<div class="wx-days">${days.join('')}</div>` +
+    `</div>`;
+}
+
+// ------------------------------------------------------------------ photos view (placeholder)
+// No photo source feeds the office dashboard yet. These gradient slides stand in until one does:
+// replace PHOTOS with [{ src, caption }] entries (and render an <img>) once there's a feed.
+
+const PHOTOS = [
+  { bg: 'linear-gradient(135deg, #6E5C99, #2B2140)', caption: 'Photo source not connected' },
+  { bg: 'linear-gradient(135deg, #4B6A9B, #1C2638)', caption: 'Photo source not connected' },
+  { bg: 'linear-gradient(135deg, #5B8A6E, #1E2C24)', caption: 'Photo source not connected' },
+  { bg: 'linear-gradient(135deg, #A65A7B, #3A1D2A)', caption: 'Photo source not connected' },
+];
+let photoIdx = 0, photoTimer = 0;
+
+function renderPhotos() {
+  const n = new Date();
+  $('view-photos').innerHTML =
+    `<div class="ph">${PHOTOS.map((p, i) => `<div class="ph-slide ${i === photoIdx ? 'is-on' : ''}" style="background:${p.bg}"></div>`).join('')}` +
+    `<div class="ph-cap"><div><span class="label">Photos · ${photoIdx + 1} of ${PHOTOS.length}</span><div class="serif">${esc(PHOTOS[photoIdx].caption)}</div></div>` +
+    `<span class="num ph-time">${fmtTime(n, false)}</span></div></div>`;
+}
+function startPhotos() {
+  stopPhotos();
+  photoTimer = setInterval(() => {
+    const slides = document.querySelectorAll('.ph-slide');
+    if (!slides.length) return;
+    slides[photoIdx].classList.remove('is-on');
+    photoIdx = (photoIdx + 1) % PHOTOS.length;
+    slides[photoIdx].classList.add('is-on');
+    document.querySelector('.ph-cap .label').textContent = `Photos · ${photoIdx + 1} of ${PHOTOS.length}`;
+    document.querySelector('.ph-cap .serif').textContent = PHOTOS[photoIdx].caption;
+  }, 12000);
+}
+function stopPhotos() { clearInterval(photoTimer); photoTimer = 0; }
+
+// ------------------------------------------------------------------ views + idle
+
+let current = null;
+function go(name) {
+  if (!VIEWS.includes(name)) name = 'today';
+  if (name === current) return;
+  current = name;
+  for (const v of VIEWS) $(`view-${v}`).classList.toggle('is-active', v === name);
+  document.querySelectorAll('.rail-item').forEach((b) => b.classList.toggle('is-active', b.dataset.go === name));
+  $('stage').classList.toggle('on-photos', name === 'photos');
+  if (location.hash !== `#${name}`) history.replaceState(null, '', `${location.pathname}${location.search}#${name}`);
+  renderCurrent();
+  if (name === 'photos') startPhotos(); else stopPhotos();
+}
+function renderCurrent() {
+  if (current === 'calendar') renderCalendarView();
+  else if (current === 'weather') renderWeatherView();
+  else if (current === 'photos') renderPhotos();
+}
+
+let lastTouch = Date.now();
+setInterval(() => {
+  if (current !== 'today' && !$('settings').classList.contains('is-open') && Date.now() - lastTouch >= IDLE_HOME) go('today');
+}, 5000);
+
+// ------------------------------------------------------------------ display settings (hold the rail clock, or press S)
+
+function settingsHTML() {
+  const swatch = (t) => `<i style="background:linear-gradient(135deg,${t.sw[0]} 50%,${t.sw[1]} 50%)"></i>`;
+  const nightNote = autoNight && isNight() && chosenTheme !== 'graphite'
+    ? `<p class="set-note">Night-time: showing Graphite until 6 AM, then ${THEMES.find((t) => t.id === chosenTheme).name}.</p>` : '';
+  return `<div class="set-panel"><button class="set-done" data-close>Done</button>` +
+    `<span class="label">Display</span><h2>Colour theme</h2>` +
+    `<div class="set-grid">${THEMES.map((t) => `<button data-theme="${t.id}" class="${t.id === chosenTheme ? 'is-on' : ''}">${swatch(t)}${t.name}</button>`).join('')}` +
+    `<button data-autonight class="${autoNight ? 'is-on' : ''}">Graphite at night${autoNight ? ' ✓' : ''}</button></div>` +
+    `${nightNote}<p class="set-note">Graphite at night runs 10 PM – 6 AM. Keys: 1–4 views · T theme · S settings.</p></div>`;
+}
+function openSettings() { $('settings').innerHTML = settingsHTML(); $('settings').classList.add('is-open'); }
+function closeSettings() { $('settings').classList.remove('is-open'); }
+function cycleTheme() {
+  const ids = THEMES.map((t) => t.id);
+  setTheme(ids[(ids.indexOf(chosenTheme) + 1) % ids.length]);
+}
+
+$('settings').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) { if (e.target === $('settings')) closeSettings(); return; }
+  if (b.hasAttribute('data-close')) return closeSettings();
+  if (b.dataset.theme) setTheme(b.dataset.theme);
+  if (b.hasAttribute('data-autonight')) setAutoNight(!autoNight);
+  openSettings();
+});
+
+// Hold the rail clock for 0.7 s to open settings.
+(function holdClock() {
+  const el = $('railClock');
+  let t = 0;
+  const cancel = () => { clearTimeout(t); el.classList.remove('is-holding'); };
+  el.addEventListener('pointerdown', () => {
+    el.classList.add('is-holding');
+    t = setTimeout(() => { cancel(); openSettings(); }, 700);
+  });
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointerleave', cancel);
+  el.addEventListener('pointercancel', cancel);
+})();
+
+// Switch views the instant a finger lands, not on release; keyboard "clicks" (detail 0) still work.
+$('rail').addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-go]');
+  if (b && e.button === 0) go(b.dataset.go);
+});
+$('rail').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-go]');
+  if (b && e.detail === 0) go(b.dataset.go);
+});
+document.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
+window.addEventListener('hashchange', () => go(location.hash.slice(1)));
+document.addEventListener('keydown', (e) => {
+  lastTouch = Date.now();
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= String(VIEWS.length)) go(VIEWS[+k - 1]);
+  if (k === 't') { cycleTheme(); if ($('settings').classList.contains('is-open')) openSettings(); }
+  if (k === 's') { $('settings').classList.contains('is-open') ? closeSettings() : openSettings(); }
+  if (k === 'escape') closeSettings();
+});
+
+// ------------------------------------------------------------------ boot + ticks
+
 function renderAll() {
   renderClock();
   renderWeather();
   renderNext();
   renderAgenda();
   renderStatus();
+  renderCurrent();
 }
 
+go(location.hash.slice(1) || 'today');
 renderAll();
 refresh('calendar');
 refresh('weather');
 setInterval(() => refresh('calendar'), 5 * MIN);
 setInterval(() => refresh('weather'), 15 * MIN);
 
-// Tick on the minute: clock, countdown, past/current rows.
+// Tick on the minute: clock, countdown, past/current rows, and the open view.
 function tick() {
   renderClock();
   renderNext();
   renderAgenda();
   renderStatus();
+  if (current === 'calendar') renderCalendarView();
+  if (current === 'photos') document.querySelector('.ph-time').textContent = fmtTime(new Date(), false);
   setTimeout(tick, MIN - (Date.now() % MIN) + 50);
 }
 setTimeout(tick, MIN - (Date.now() % MIN) + 50);
