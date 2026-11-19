@@ -31,6 +31,10 @@
   --tile-blind: #E4EEFA;
   --tile-blind-fill: #BFD6F2;
 
+  /* pothos art in the home clock tile: one flat, muted purple-grey */
+  --plant: #8A8296;
+  --plant-alpha: .2;
+
   /* person colour defaults (overridden inline per element) */
   --c: var(--ink);
   --c-rgb: var(--ink-rgb);
@@ -127,4 +131,6 @@
   --tile-lit: #3A3120;
   --tile-blind: #1F2A38;
   --tile-blind-fill: #2E4664;
+  --plant: #A69EB3;
+  --plant-alpha: .12;
 }
