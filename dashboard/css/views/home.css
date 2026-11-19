@@ -8,7 +8,16 @@
 }
 
 /* ---- clock */
-.h-clock { grid-column: 1 / 5; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 6px; border-bottom: 3px solid var(--ink); }
+.h-clock { grid-column: 1 / 5; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 6px; border-bottom: 3px solid var(--ink); position: relative; }
+.h-clock > * { position: relative; }
+/* A close crop of the pothos from plant-scene.svg, tinted one muted purple-grey, growing up from
+   the clock's rule. It runs up through the view's top padding to the screen edge; the element's
+   own box crops the drawing on the other sides (mask-size: cover). */
+.h-clock::before {
+  content: ''; position: absolute; right: 0; bottom: 0; top: calc(-1 * var(--pad)); width: 170px;
+  background: var(--plant); opacity: var(--plant-alpha); pointer-events: none;
+  -webkit-mask: url(/botanicals/crop-pothos.svg) no-repeat left bottom / cover;
+}
 .h-time { font-size: var(--fs-clock); line-height: .78; letter-spacing: -.035em; display: flex; align-items: flex-start; }
 .h-ampm { font-size: 28px; font-weight: 800; letter-spacing: .06em; margin: 6px 0 0 10px; }
 .h-date { font-size: 24px; margin-top: 14px; font-family: var(--serif); }
