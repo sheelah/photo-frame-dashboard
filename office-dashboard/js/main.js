@@ -222,15 +222,22 @@ function renderAgenda() {
   if (!state.calendar) { $('agenda').innerHTML = ''; return; }
   const nowMs = Date.now();
   const today = startOfDay(nowMs);
-  // Today, tomorrow, then two more days; caps keep it within the 800px panel.
-  const plan = [[0, 6], [1, 4], [2, 3], [3, 3]];
+  // Today and tomorrow always, then the next two days with events within the week (the sync job
+  // expands 8 days), so an empty weekend doesn't leave the list at two days. Caps keep it within
+  // the 800px panel.
   let budget = 12;
+  let extra = 2;
   const html = [];
-  for (const [offset, cap] of plan) {
+  for (let offset = 0; offset < 7 && extra > 0; offset++) {
+    const cap = offset === 0 ? 6 : offset === 1 ? 4 : 3;
     const day = addDays(today, offset);
     const { allDay, timed } = eventsOn(day);
     const items = allDay.map((e) => ({ e, all: true })).concat(timed.map((e) => ({ e, all: false })));
-    if (offset >= 2 && (!items.length || budget <= 0)) continue;
+    if (offset >= 2) {
+      if (!items.length) continue;
+      if (budget <= 0) break;
+      extra--;
+    }
     const limit = Math.min(cap, Math.max(1, budget));
     const shown = items.slice(0, limit);
     budget -= Math.max(1, shown.length);
