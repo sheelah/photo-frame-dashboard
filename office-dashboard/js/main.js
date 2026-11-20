@@ -222,15 +222,22 @@ function renderAgenda() {
   if (!state.calendar) { $('agenda').innerHTML = ''; return; }
   const nowMs = Date.now();
   const today = startOfDay(nowMs);
-  // Today, tomorrow, then two more days; caps keep it within the 800px panel.
-  const plan = [[0, 6], [1, 4], [2, 3], [3, 3]];
+  // Today and tomorrow always, then the next two days with events within the week (the sync job
+  // expands 8 days), so an empty weekend doesn't leave the list at two days. Caps keep it within
+  // the 800px panel.
   let budget = 12;
+  let extra = 2;
   const html = [];
-  for (const [offset, cap] of plan) {
+  for (let offset = 0; offset < 7 && extra > 0; offset++) {
+    const cap = offset === 0 ? 6 : offset === 1 ? 4 : 3;
     const day = addDays(today, offset);
     const { allDay, timed } = eventsOn(day);
     const items = allDay.map((e) => ({ e, all: true })).concat(timed.map((e) => ({ e, all: false })));
-    if (offset >= 2 && (!items.length || budget <= 0)) continue;
+    if (offset >= 2) {
+      if (!items.length) continue;
+      if (budget <= 0) break;
+      extra--;
+    }
     const limit = Math.min(cap, Math.max(1, budget));
     const shown = items.slice(0, limit);
     budget -= Math.max(1, shown.length);
@@ -496,8 +503,9 @@ refresh('weather');
 setInterval(() => refresh('calendar'), 5 * MIN);
 setInterval(() => refresh('weather'), 15 * MIN);
 
-// Tick on the minute: clock, countdown, past/current rows, and the open view.
+// Tick on the minute: theme (Graphite at night), clock, countdown, past/current rows, and the open view.
 function tick() {
+  applyTheme();
   renderClock();
   renderNext();
   renderAgenda();
@@ -508,7 +516,25 @@ function tick() {
 }
 setTimeout(tick, MIN - (Date.now() % MIN) + 50);
 
-// Reload once a night to pick up deploys and clear any WebView memory growth.
+// Reload once a night to clear any WebView memory growth.
 setTimeout(() => location.reload(), addDays(startOfDay(Date.now()), 1) + 3 * HOUR - Date.now());
+
+// Pick up deploys: every few minutes, fetch the page and compare its hashed /assets/ files with
+// the ones this copy loaded. A JS or CSS change gives new hashes; reload when they differ. It waits
+// for Today with settings closed, and reloads at most once per 10 min in case a cache serves an old page.
+const assetSet = (list) => list.filter((p) => p && p.indexOf('/assets/') !== -1).sort().join(' ');
+const loadedAssets = assetSet([...document.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
+  .map((el) => el.getAttribute('src') || el.getAttribute('href')));
+async function checkForDeploy() {
+  if (!loadedAssets || current !== 'today' || $('settings').classList.contains('is-open')) return;
+  if (Date.now() - Number(loadRaw('office.lastReload', '0')) < 10 * MIN) return;
+  try {
+    const res = await fetch(api('/'), { cache: 'no-store' });
+    if (!res.ok) return;
+    const live = assetSet((await res.text()).match(/\/assets\/[^"'\s>]+/g) || []);
+    if (live && live !== loadedAssets) { saveRaw('office.lastReload', String(Date.now())); location.reload(); }
+  } catch (e) { /* offline; try again next time */ }
+}
+setInterval(checkForDeploy, 5 * MIN);
 
 window.OFFICE_READY = true;
