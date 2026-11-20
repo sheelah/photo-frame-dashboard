@@ -120,7 +120,7 @@ html.theme-anim .stage, html.theme-anim .stage * { transition: background-color 
   -webkit-mask: url(/botanicals/crop-pothos.svg) no-repeat left bottom / cover;
 }
 .time { display: flex; align-items: flex-start; line-height: .82; }
-.time .num { font-size: 150px; }  /* Figtree's tabular digits: 12:45 + AM just fits 480px */
+.time .num { font-size: 140px; }
 .ampm { font-size: 30px; font-weight: 800; margin: 10px 0 0 10px; }
 .date { margin-top: 16px; font-size: 24px; display: flex; align-items: baseline; gap: 10px; }
 .date b { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -131,7 +131,7 @@ html.theme-anim .stage, html.theme-anim .stage * { transition: background-color 
 .w-temp { font-size: 104px; line-height: .85; }
 .w-desc { display: flex; flex-direction: column; gap: 6px; }
 .w-desc .cond { font-size: 22px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.w-desc .hl { font-size: 20px; color: var(--ink-2); }
+.w-desc .hl { font-size: 18px; color: var(--ink-2); }
 .w-note { margin-top: 14px; font-size: 22px; color: var(--ink-2); }
 
 .w-hours { display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 20px; text-align: center; }
@@ -208,7 +208,7 @@ html.theme-anim .stage, html.theme-anim .stage * { transition: background-color 
 .wx-now { grid-column: 1; display: flex; align-items: center; gap: 24px; padding-bottom: 18px; border-bottom: 4px solid var(--ink); }
 .wx-now .w-temp { font-size: 150px; }
 .wx-now .w-desc .cond { font-size: 28px; }
-.wx-now .w-desc .hl { font-size: 22px; }
+.wx-now .w-desc .hl { font-size: 20px; }
 .wx-sun { grid-column: 2; align-self: end; display: flex; gap: 12px; padding-bottom: 18px; border-bottom: 4px solid var(--ink); }
 .wx-sun div { flex: 1; background: var(--card); border-radius: var(--r); padding: 14px 16px; }
 .wx-sun b { display: block; font-size: 34px; font-weight: 800; margin-top: 4px; }
