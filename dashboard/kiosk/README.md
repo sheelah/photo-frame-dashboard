@@ -9,6 +9,13 @@ closer fingers as one touch.
 - **Android settings** opens the device's Settings app.
 - **Wi-Fi settings** opens Android's Wi-Fi list directly.
 - **Reload dashboard** reloads the current URL.
+- **Screen brightness** opens a slider (5–100%) that dims the backlight as you drag. The level is
+  saved and used whenever the dashboard is on screen; Android's own brightness setting is left
+  alone, so Settings and other apps show at the normal brightness. **Use system setting** removes
+  the override.
+  From 9 pm to 7 am (the frame's local time) the kiosk dims to 45%, or stays lower if the daytime
+  level already is. Moving the slider at night overrides that until 7 am without changing the
+  daytime level.
 - **Back to dashboard** dismisses the controls.
 
 ## Optional single-tap Menu button

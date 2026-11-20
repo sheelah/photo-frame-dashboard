@@ -38,11 +38,13 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -77,6 +79,13 @@ public class MainActivity extends Activity {
   static final String PREF_URL = "url";
   static final String PREF_MENU_BUTTON = "menu_button";
   static final String PREF_BOOTANIM_EXIT = "bootanim_exit";
+  static final String PREF_BRIGHTNESS = "brightness";
+  // Lowest kiosk brightness. Some panels turn the backlight fully off at 0, which looks like a
+  // dead frame, so the slider stops above it.
+  static final int MIN_BRIGHTNESS_PCT = 5;
+  // Night dimming, in the frame's local time: from 9 pm until 7 am the kiosk is no brighter than this.
+  static final int NIGHT_START_HOUR = 21, NIGHT_END_HOUR = 7, NIGHT_BRIGHTNESS_PCT = 45;
+  static final long BRIGHTNESS_CHECK_MS = 60 * 1000;
   static final long EXIT_HOLD_MS = 1500;
   static final int CANCEL_POINTER_IDS = 10; // touch ids 0-9
   static final long RETRY_MS = 5000;
@@ -163,6 +172,26 @@ public class MainActivity extends Activity {
   // While the sign-in page is up, check every few seconds whether the frame is online yet.
   private final Runnable portalCheck = this::checkPortal;
 
+  // A slider change made at night (percent), kept until 7 am; -1 when there is none.
+  private int nightBrightness = -1;
+  private boolean wasNight;
+
+  // Once a minute while the dashboard is in front: dim at 9 pm, restore at 7 am. Checking the
+  // clock each time (not one long timer) also copes with a clock set late after a power cut.
+  private final Runnable brightnessCheck = new Runnable() {
+    @Override
+    public void run() {
+      boolean night = isNight();
+      if (night != wasNight) {
+        wasNight = night;
+        nightBrightness = -1;
+        Log.i(TAG, night ? "Night: dimming the screen" : "Morning: restoring brightness");
+      }
+      applyBrightness(getWindow(), effectiveBrightness());
+      handler.postDelayed(this, BRIGHTNESS_CHECK_MS);
+    }
+  };
+
   private final Runnable showControls = new Runnable() {
     @Override
     public void run() {
@@ -172,12 +201,14 @@ public class MainActivity extends Activity {
       cancelPageTouches();
       new AlertDialog.Builder(MainActivity.this)
           .setTitle("Home HQ")
-          .setItems(new String[] {"Open launcher", "Android settings", "Wi-Fi settings", "Reload dashboard"},
+          .setItems(new String[] {"Open launcher", "Android settings", "Wi-Fi settings", "Reload dashboard",
+                  "Screen brightness"},
               (dialog, which) -> {
                 if (which == 0) openLauncher();
                 else if (which == 1) startActivity(new Intent(Settings.ACTION_SETTINGS));
                 else if (which == 2) openWifiSettings();
-                else web.reload();
+                else if (which == 3) web.reload();
+                else showBrightness();
               })
           .setNegativeButton("Back to dashboard", null).show();
     }
@@ -193,6 +224,8 @@ public class MainActivity extends Activity {
     keepNavigationEnabled();
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         | WindowManager.LayoutParams.FLAG_FULLSCREEN);
+    wasNight = isNight();
+    applyBrightness(getWindow(), effectiveBrightness());
 
     web = new WebView(this);
     WebSettings s = web.getSettings();
@@ -340,6 +373,8 @@ public class MainActivity extends Activity {
     web.resumeTimers();
     web.onResume();
     NavigationService.setDashboardVisible(true);
+    handler.removeCallbacks(brightnessCheck);
+    handler.post(brightnessCheck);
     if (portalMode) {
       handler.removeCallbacks(portalCheck);
       handler.post(portalCheck);
@@ -361,6 +396,7 @@ public class MainActivity extends Activity {
     handler.removeCallbacks(retry);
     handler.removeCallbacks(stall);
     handler.removeCallbacks(portalCheck);
+    handler.removeCallbacks(brightnessCheck);
     NavigationService.setDashboardVisible(false);
     super.onPause();
   }
@@ -817,6 +853,102 @@ public class MainActivity extends Activity {
     boolean debug = intent != null && intent.getBooleanExtra("debug", false);
     WebView.setWebContentsDebuggingEnabled(debug);
     Log.i(TAG, "WebView remote debugging " + (debug ? "ON" : "off"));
+  }
+
+  /** The saved kiosk brightness in percent, or -1 to follow Android's brightness setting. */
+  private int savedBrightness() {
+    return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(PREF_BRIGHTNESS, -1);
+  }
+
+  /**
+   * Sets the backlight while this window is on screen. A window override needs no permission and
+   * leaves Android's own brightness setting alone; it ends when another app or Settings is in front.
+   */
+  private static void applyBrightness(android.view.Window w, int pct) {
+    if (w == null) return;
+    WindowManager.LayoutParams lp = w.getAttributes();
+    lp.screenBrightness = pct < 0 ? WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE : pct / 100f;
+    w.setAttributes(lp);
+  }
+
+  static boolean isNight() {
+    int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+  }
+
+  /**
+   * The level to show now: the saved one by day; at night the saved one capped at
+   * NIGHT_BRIGHTNESS_PCT, unless the slider was moved since night began.
+   */
+  private int effectiveBrightness() {
+    int saved = savedBrightness();
+    if (!isNight()) return saved;
+    if (nightBrightness >= 0) return nightBrightness;
+    return saved < 0 || saved > NIGHT_BRIGHTNESS_PCT ? NIGHT_BRIGHTNESS_PCT : saved;
+  }
+
+  /** A slider that changes the brightness live. By day it is saved; at night it lasts until 7 am. */
+  private void showBrightness() {
+    boolean night = isNight();
+    int current = effectiveBrightness();
+    int start = current < 0 ? 100 : current;
+
+    LinearLayout box = new LinearLayout(this);
+    box.setOrientation(LinearLayout.VERTICAL);
+    box.setPadding(dp(24), dp(16), dp(24), dp(8));
+    TextView label = new TextView(this);
+    label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+    label.setGravity(Gravity.CENTER);
+    label.setText(current < 0 ? "System setting" : start + "%");
+    box.addView(label);
+    TextView note = new TextView(this);
+    note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+    note.setGravity(Gravity.CENTER);
+    note.setText(night
+        ? "Night dimming is on until 7 am. A change now lasts until then."
+        : "Dims to " + NIGHT_BRIGHTNESS_PCT + "% from 9 pm to 7 am.");
+    box.addView(note);
+    SeekBar bar = new SeekBar(this);
+    bar.setMax(100 - MIN_BRIGHTNESS_PCT);
+    bar.setProgress(start - MIN_BRIGHTNESS_PCT);
+    bar.setPadding(dp(16), dp(24), dp(16), dp(24));
+    box.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT));
+
+    AlertDialog dialog = new AlertDialog.Builder(this)
+        .setTitle("Screen brightness")
+        .setView(box)
+        .setPositiveButton("Done", null)
+        .setNeutralButton("Use system setting", (d, w) -> setBrightness(-1))
+        .create();
+    bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+      @Override
+      public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+        if (!fromUser) return;
+        int pct = progress + MIN_BRIGHTNESS_PCT;
+        label.setText(pct + "%");
+        setBrightness(pct);
+        // The dialog is its own window; give it the same level so the preview is what stays.
+        applyBrightness(dialog.getWindow(), pct);
+      }
+
+      @Override public void onStartTrackingTouch(SeekBar s) {}
+      @Override public void onStopTrackingTouch(SeekBar s) {}
+    });
+    dialog.show();
+  }
+
+  /** A slider change. At night it's kept only until 7 am, so the daytime level stays as it was. */
+  private void setBrightness(int pct) {
+    if (pct >= 0 && isNight()) {
+      nightBrightness = pct;
+      Log.i(TAG, "Brightness set to " + pct + "% until 7 am");
+    } else {
+      nightBrightness = -1;
+      getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(PREF_BRIGHTNESS, pct).apply();
+      Log.i(TAG, pct < 0 ? "Brightness follows system setting" : "Brightness set to " + pct + "%");
+    }
+    applyBrightness(getWindow(), effectiveBrightness());
   }
 
   /** A saved opt-in for panels where the two-finger gesture is unreliable. */
