@@ -503,8 +503,9 @@ refresh('weather');
 setInterval(() => refresh('calendar'), 5 * MIN);
 setInterval(() => refresh('weather'), 15 * MIN);
 
-// Tick on the minute: clock, countdown, past/current rows, and the open view.
+// Tick on the minute: theme (Graphite at night), clock, countdown, past/current rows, and the open view.
 function tick() {
+  applyTheme();
   renderClock();
   renderNext();
   renderAgenda();
@@ -515,7 +516,25 @@ function tick() {
 }
 setTimeout(tick, MIN - (Date.now() % MIN) + 50);
 
-// Reload once a night to pick up deploys and clear any WebView memory growth.
+// Reload once a night to clear any WebView memory growth.
 setTimeout(() => location.reload(), addDays(startOfDay(Date.now()), 1) + 3 * HOUR - Date.now());
+
+// Pick up deploys: every few minutes, fetch the page and compare its hashed /assets/ files with
+// the ones this copy loaded. A JS or CSS change gives new hashes; reload when they differ. It waits
+// for Today with settings closed, and reloads at most once per 10 min in case a cache serves an old page.
+const assetSet = (list) => list.filter((p) => p && p.indexOf('/assets/') !== -1).sort().join(' ');
+const loadedAssets = assetSet([...document.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
+  .map((el) => el.getAttribute('src') || el.getAttribute('href')));
+async function checkForDeploy() {
+  if (!loadedAssets || current !== 'today' || $('settings').classList.contains('is-open')) return;
+  if (Date.now() - Number(loadRaw('office.lastReload', '0')) < 10 * MIN) return;
+  try {
+    const res = await fetch(api('/'), { cache: 'no-store' });
+    if (!res.ok) return;
+    const live = assetSet((await res.text()).match(/\/assets\/[^"'\s>]+/g) || []);
+    if (live && live !== loadedAssets) { saveRaw('office.lastReload', String(Date.now())); location.reload(); }
+  } catch (e) { /* offline; try again next time */ }
+}
+setInterval(checkForDeploy, 5 * MIN);
 
 window.OFFICE_READY = true;
