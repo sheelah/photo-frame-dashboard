@@ -289,6 +289,9 @@ async function refresh(key) {
   } catch (e) {
     state.failed[key] = true;
     console.warn(`${key} refresh failed`, e);
+    // Photos otherwise refresh hourly; don't sit on "Photos unavailable" that long after a blip
+    // (such as a reload that lands mid-deploy, before the new Worker is live).
+    if (key === 'photos') setTimeout(() => refresh('photos'), 2 * MIN);
   }
   renderAll();
 }
@@ -414,7 +417,7 @@ function renderPhotos() {
   photoFront = 0;
   $('view-photos').innerHTML =
     `<div class="ph">` +
-      `<div class="ph-slide is-on">${p ? `<img src="${esc(p.src)}" alt="" decoding="async">` : ''}</div>` +
+      `<div class="ph-slide is-on">${p ? `<img src="${esc(api(p.src))}" alt="" decoding="async">` : ''}</div>` +
       `<div class="ph-slide"><img alt="" decoding="async"></div>` +
       `<div class="ph-cap"><div><span class="label"></span><div class="serif"></div></div>` +
       `<span class="num ph-time">${fmtTime(new Date(), false)}</span></div>` +
@@ -424,7 +427,7 @@ function renderPhotos() {
   preloadPhoto(photoIdx + 1);
 }
 function preloadPhoto(i) {
-  if (photoOrder.length > 1) new Image().src = photoOrder[i % photoOrder.length].src;
+  if (photoOrder.length > 1) new Image().src = api(photoOrder[i % photoOrder.length].src);
 }
 async function nextPhoto() {
   if (photoOrder.length < 2) return;
@@ -434,7 +437,7 @@ async function nextPhoto() {
   const back = slides[1 - photoFront];
   let img = back.querySelector('img');
   if (!img) { img = document.createElement('img'); img.alt = ''; back.appendChild(img); }
-  img.src = photoOrder[idx].src;
+  img.src = api(photoOrder[idx].src);
   try { await img.decode(); } catch (e) { photoIdx = idx; return; }  // broken image: skip it next time round
   if (current !== 'photos') return;
   back.classList.add('is-on');

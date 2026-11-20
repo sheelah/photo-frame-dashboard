@@ -15,6 +15,7 @@ export default {
       if (url.pathname === '/api/calendar') response = await calendar(env);
       else if (url.pathname === '/api/weather') response = await weather(env);
       else if (url.pathname === '/api/photos') response = await photos(env);
+      else if (url.pathname.startsWith('/img/')) response = await photoImage(url.pathname.slice(5));
       else response = await env.ASSETS.fetch(request);
     } catch (err) {
       response = json({ error: String(err && err.message || err) }, 502);
@@ -89,8 +90,14 @@ async function weather(env) {
 // ------------------------------------------------------------------ photos
 
 // One public Flickr album (FLICKR_USER_ID / FLICKR_ALBUM_ID vars, FLICKR_API_KEY secret), as
-// { updated, album, photos: [{ src, w, h, caption, taken }] }. The largest public size up to 2048px.
-const SIZES = ['k', 'h', 'l'];
+// { updated, album, photos: [{ src, w, h, caption, taken }] }. 1600px (h) suits a 1280x800 frame
+// without decoding 2048px images on 1 GB of RAM; fall back to 2048 (k), then 1024 (l).
+//
+// `src` points at /img/ on this Worker, not at live.staticflickr.com: Flickr's CloudFront
+// certificate chains to Amazon Root CA 1 / Starfield Services Root G2, which Android 6 doesn't
+// trust, so the frame's WebView refuses images loaded from Flickr directly.
+const SIZES = ['h', 'k', 'l'];
+const FLICKR_IMG = /^https:\/\/live\.staticflickr\.com\/(\d+\/\d+_[0-9a-f]+_[a-z]\.jpg)$/;
 
 async function photos(env) {
   if (!env.FLICKR_API_KEY || !env.FLICKR_ALBUM_ID) return json({ error: 'Flickr album not configured' }, 503);
@@ -114,9 +121,10 @@ async function photos(env) {
   const list = [];
   for (const p of data.photoset.photo || []) {
     const s = SIZES.find((size) => p[`url_${size}`]);
-    if (!s) continue;
+    const m = s && FLICKR_IMG.exec(p[`url_${s}`]);
+    if (!m) continue;
     list.push({
-      src: p[`url_${s}`],
+      src: `/img/${m[1]}`,
       w: Number(p[`width_${s}`]) || 0,
       h: Number(p[`height_${s}`]) || 0,
       caption: p.title || '',
@@ -124,4 +132,16 @@ async function photos(env) {
     });
   }
   return json({ updated: Date.now(), album: data.photoset.title || '', photos: list }, 200, 3600);
+}
+
+// /img/<server>/<id>_<secret>_<size>.jpg → the same path on live.staticflickr.com. Only that shape
+// is accepted, so this can't be used to fetch anything else. Images never change at a given URL, so
+// both Cloudflare and the WebView may cache them for a long time.
+async function photoImage(path) {
+  if (!/^\d+\/\d+_[0-9a-f]+_[a-z]\.jpg$/.test(path)) return new Response('Not found', { status: 404 });
+  const res = await fetch(`https://live.staticflickr.com/${path}`, { cf: { cacheTtl: 30 * 86400, cacheEverything: true } });
+  if (!res.ok) return new Response(`flickr image returned ${res.status}`, { status: 502 });
+  return new Response(res.body, {
+    headers: { 'Content-Type': res.headers.get('Content-Type') || 'image/jpeg', 'Cache-Control': 'private, max-age=604800' },
+  });
 }
