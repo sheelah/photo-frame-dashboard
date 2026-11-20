@@ -1,5 +1,5 @@
 // Office dashboard Worker: token gate, the calendar (read from KV; the Linux box sync job writes
-// it, see sync/), the Open-Meteo weather API, and the static page from ./dist.
+// it, see sync/), the Open-Meteo weather API, one public Flickr album, and the static page from ./dist.
 
 const COOKIE = 'k';
 
@@ -14,6 +14,7 @@ export default {
     try {
       if (url.pathname === '/api/calendar') response = await calendar(env);
       else if (url.pathname === '/api/weather') response = await weather(env);
+      else if (url.pathname === '/api/photos') response = await photos(env);
       else response = await env.ASSETS.fetch(request);
     } catch (err) {
       response = json({ error: String(err && err.message || err) }, 502);
@@ -83,4 +84,44 @@ async function weather(env) {
   if (!res.ok) throw new Error(`weather returned ${res.status}`);
   const data = await res.json();
   return json({ updated: Date.now(), ...data }, 200, 300);
+}
+
+// ------------------------------------------------------------------ photos
+
+// One public Flickr album (FLICKR_USER_ID / FLICKR_ALBUM_ID vars, FLICKR_API_KEY secret), as
+// { updated, album, photos: [{ src, w, h, caption, taken }] }. The largest public size up to 2048px.
+const SIZES = ['k', 'h', 'l'];
+
+async function photos(env) {
+  if (!env.FLICKR_API_KEY || !env.FLICKR_ALBUM_ID) return json({ error: 'Flickr album not configured' }, 503);
+  const q = new URLSearchParams({
+    method: 'flickr.photosets.getPhotos',
+    api_key: env.FLICKR_API_KEY,
+    photoset_id: env.FLICKR_ALBUM_ID,
+    extras: SIZES.map((s) => `url_${s}`).join(',') + ',date_taken',
+    privacy_filter: '1',
+    media: 'photos',
+    per_page: '500',
+    format: 'json',
+    nojsoncallback: '1',
+  });
+  if (env.FLICKR_USER_ID) q.set('user_id', env.FLICKR_USER_ID);
+  const res = await fetch(`https://api.flickr.com/services/rest/?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
+  if (!res.ok) throw new Error(`flickr returned ${res.status}`);
+  const data = await res.json();
+  if (data.stat !== 'ok') throw new Error(`flickr: ${data.message || 'request failed'}`);
+
+  const list = [];
+  for (const p of data.photoset.photo || []) {
+    const s = SIZES.find((size) => p[`url_${size}`]);
+    if (!s) continue;
+    list.push({
+      src: p[`url_${s}`],
+      w: Number(p[`width_${s}`]) || 0,
+      h: Number(p[`height_${s}`]) || 0,
+      caption: p.title || '',
+      taken: p.datetaken || null,
+    });
+  }
+  return json({ updated: Date.now(), album: data.photoset.title || '', photos: list }, 200, 3600);
 }
