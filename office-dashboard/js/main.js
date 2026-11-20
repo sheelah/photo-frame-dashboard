@@ -447,8 +447,9 @@ function renderPhotos() {
 function preloadPhoto(i) {
   if (photoOrder.length > 1) new Image().src = api(photoOrder[i % photoOrder.length].src);
 }
+let photoBusy = false;  // a decode is in flight; a tap meanwhile mustn't swap the back slide's src
 async function nextPhoto() {
-  if (photoOrder.length < 2) return;
+  if (photoBusy || photoOrder.length < 2) return;
   const slides = document.querySelectorAll('#view-photos .ph-slide');
   if (slides.length < 2) return;
   const idx = (photoIdx + 1) % photoOrder.length;
@@ -456,7 +457,9 @@ async function nextPhoto() {
   let img = back.querySelector('img');
   if (!img) { img = document.createElement('img'); img.alt = ''; back.appendChild(img); }
   img.src = api(photoOrder[idx].src);
+  photoBusy = true;
   try { await img.decode(); } catch (e) { photoIdx = idx; return; }  // broken image: skip it next time round
+  finally { photoBusy = false; }
   if (current !== 'photos') return;
   back.classList.add('is-on');
   slides[photoFront].classList.remove('is-on');
@@ -470,6 +473,13 @@ function startPhotos() {
   photoTimer = setInterval(nextPhoto, PHOTO_EVERY);
 }
 function stopPhotos() { clearInterval(photoTimer); photoTimer = 0; }
+
+// Tap a photo to skip ahead; the auto-advance timer restarts so the new one gets its full time.
+$('view-photos').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || current !== 'photos') return;
+  startPhotos();
+  nextPhoto();
+});
 
 // ------------------------------------------------------------------ views + idle
 
