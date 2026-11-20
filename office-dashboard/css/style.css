@@ -17,6 +17,9 @@
   --accent-ink: #FFFFFF;
   --alert: #E5261E;
   --wet: #3A7BD5;
+  /* pothos art in the today clock: one flat, muted purple-grey (same as Home HQ) */
+  --plant: #8A8296;
+  --plant-alpha: .2;
   --sans: 'Archivo', 'Roboto Condensed', 'Roboto', system-ui, sans-serif;
   --serif: 'Instrument Serif', 'Noto Serif', Georgia, serif;
   --r: 18px;
@@ -41,6 +44,7 @@
   --slab: #2C2D32; --on-slab: #F3EFE7;
   --accent: #5E5084; --accent-ink: #F3EFE7;
   --wet: #6EA8FF;
+  --plant: #A69EB3; --plant-alpha: .12;
 }
 
 /* ---------------------------------------------------------------- base */
@@ -105,7 +109,16 @@ html.theme-anim .stage, html.theme-anim .stage * { transition: background-color 
 /* ---------------------------------------------------------------- today */
 .today { height: 100%; display: grid; grid-template-columns: 480px 1fr; gap: 24px; }
 .left { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.clock { padding-bottom: 18px; border-bottom: 4px solid var(--ink); }
+.clock { padding-bottom: 18px; border-bottom: 4px solid var(--ink); position: relative; }
+.clock > * { position: relative; }
+/* A close crop of the pothos from assets/plant-scene.svg (same art as Home HQ's clock tile), tinted
+   one muted purple-grey, growing up from the clock's rule. It runs up through the view's top padding
+   to the screen edge; the element's own box crops the drawing on the other sides (mask-size: cover). */
+.clock::before {
+  content: ''; position: absolute; right: 0; bottom: 0; top: calc(-1 * var(--pad)); width: 170px;
+  background: var(--plant); opacity: var(--plant-alpha); pointer-events: none;
+  -webkit-mask: url(/botanicals/crop-pothos.svg) no-repeat left bottom / cover;
+}
 .time { display: flex; align-items: flex-start; line-height: .82; }
 .time .num { font-size: 160px; }
 .ampm { font-size: 30px; font-weight: 800; font-stretch: 80%; margin: 10px 0 0 10px; }
