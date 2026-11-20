@@ -8,16 +8,26 @@
   <title>Office</title>
   <script>
     // Colour theme — applied before CSS so there's no flash. ?theme=<name> overrides and is remembered.
-    // Graphite at night (10 PM–6 AM) is applied here too, unless it was turned off.
+    // Graphite from sunset to sunrise (cached weather's times, same rule as isNight() in js/main.js)
+    // is applied here too, unless it was turned off.
     (function () {
-      var t = null, auto = '1', m = /[?&]theme=([a-z]+)/.exec(location.search);
+      var t = null, auto = '1', w = null, m = /[?&]theme=([a-z]+)/.exec(location.search);
       try {
         if (m) localStorage.setItem('office.theme', m[1]);
         t = localStorage.getItem('office.theme');
         auto = localStorage.getItem('office.nightTheme') || '1';
+        w = JSON.parse(localStorage.getItem('weather'));
       } catch (e) { t = m && m[1]; }
-      var h = new Date().getHours();
-      if (auto === '1' && (h >= 22 || h < 6)) t = 'graphite';
+      var n = new Date(), now = n.getHours() * 60 + n.getMinutes(), rise = 420, set = 1080;
+      var p = function (x) { return x < 10 ? '0' + x : '' + x; };
+      var hm = function (s) { return typeof s === 'string' && s.length >= 16 ? +s.slice(11, 13) * 60 + +s.slice(14, 16) : null; };
+      var d = w && w.daily;
+      if (d && d.time && d.sunrise && d.sunset && d.time.length) {
+        var key = n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate()), i = d.time.indexOf(key);
+        if (i < 0) i = d.time[0] > key ? 0 : d.time.length - 1;
+        if (hm(d.sunrise[i]) != null && hm(d.sunset[i]) != null) { rise = hm(d.sunrise[i]); set = hm(d.sunset[i]); }
+      }
+      if (auto === '1' && (now < rise || now >= set)) t = 'graphite';
       if (t && t !== 'paper') document.documentElement.setAttribute('data-theme', t);
     })();
   </script>

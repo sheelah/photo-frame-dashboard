@@ -58,8 +58,8 @@ const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // ------------------------------------------------------------------ colour themes
-// Same palettes as Home HQ (css/style.css). The saved theme is the day choice; from 10 PM to
-// 6 AM Graphite is shown on top unless "Graphite at night" is off. index.html applies the same
+// Same palettes as Home HQ (css/style.css). The saved theme is the day choice; from sunset to
+// sunrise Graphite is shown on top unless "Graphite at night" is off. index.html applies the same
 // rule before first paint.
 
 const THEMES = [
@@ -75,7 +75,25 @@ let chosenTheme = loadRaw('office.theme', 'paper');
 if (!THEMES.some((t) => t.id === chosenTheme)) chosenTheme = 'paper';
 let autoNight = loadRaw('office.nightTheme', '1') === '1';
 
-function isNight(d = new Date()) { const h = d.getHours(); return h >= 22 || h < 6; }
+// Sunrise/sunset come from the weather feed's daily list, as local "YYYY-MM-DDTHH:MM" strings in the
+// Worker's TZ. Today's entry if present; otherwise the nearest day's times (they shift by a minute
+// or two a day), and with no weather cached at all, 6 PM – 7 AM. index.html repeats this rule.
+const hm = (s) => (typeof s === 'string' && s.length >= 16 ? Number(s.slice(11, 13)) * 60 + Number(s.slice(14, 16)) : null);
+function sunTimes(d = new Date()) {
+  const daily = state.weather && state.weather.daily;
+  if (daily && daily.time && daily.sunrise && daily.sunset && daily.time.length) {
+    let i = daily.time.indexOf(dayKey(d));
+    if (i < 0) i = daily.time[0] > dayKey(d) ? 0 : daily.time.length - 1;
+    const rise = hm(daily.sunrise[i]), set = hm(daily.sunset[i]);
+    if (rise != null && set != null) return { rise, set };
+  }
+  return { rise: 7 * 60, set: 18 * 60 };
+}
+function isNight(d = new Date()) {
+  const { rise, set } = sunTimes(d), m = d.getHours() * 60 + d.getMinutes();
+  return m < rise || m >= set;
+}
+const fmtMin = (m) => fmtTime(new Date(2000, 0, 1, Math.floor(m / 60), m % 60));
 function applyTheme() {
   const id = autoNight && isNight() ? 'graphite' : chosenTheme;
   const root = document.documentElement;
@@ -482,13 +500,14 @@ setInterval(() => {
 
 function settingsHTML() {
   const swatch = (t) => `<i style="background:linear-gradient(135deg,${t.sw[0]} 50%,${t.sw[1]} 50%)"></i>`;
+  const sunNow = sunTimes();
   const nightNote = autoNight && isNight() && chosenTheme !== 'graphite'
-    ? `<p class="set-note">Night-time: showing Graphite until 6 AM, then ${THEMES.find((t) => t.id === chosenTheme).name}.</p>` : '';
+    ? `<p class="set-note">Night-time: showing Graphite until sunrise at ${fmtMin(sunNow.rise)}, then ${THEMES.find((t) => t.id === chosenTheme).name}.</p>` : '';
   return `<div class="set-panel"><button class="set-done" data-close>Done</button>` +
     `<span class="label">Display</span><h2>Colour theme</h2>` +
     `<div class="set-grid">${THEMES.map((t) => `<button data-theme="${t.id}" class="${t.id === chosenTheme ? 'is-on' : ''}">${swatch(t)}${t.name}</button>`).join('')}` +
     `<button data-autonight class="${autoNight ? 'is-on' : ''}">Graphite at night${autoNight ? ' ✓' : ''}</button></div>` +
-    `${nightNote}<p class="set-note">Graphite at night runs 10 PM – 6 AM. Keys: 1–4 views · T theme · S settings.</p></div>`;
+    `${nightNote}<p class="set-note">Graphite at night runs from sunset to sunrise (today ${fmtMin(sunNow.set)} – ${fmtMin(sunNow.rise)}). Keys: 1–4 views · T theme · S settings.</p></div>`;
 }
 function openSettings() { $('settings').innerHTML = settingsHTML(); $('settings').classList.add('is-open'); }
 function closeSettings() { $('settings').classList.remove('is-open'); }
