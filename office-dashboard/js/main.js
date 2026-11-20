@@ -1,5 +1,6 @@
 // Office dashboard: a sidebar of views (Today, Calendar, Weather, Photos) over the same data —
-// weather (Open-Meteo via /api/weather) and the synced calendar (/api/calendar).
+// weather (Open-Meteo via /api/weather), the synced calendar (/api/calendar) and a Flickr album
+// (/api/photos).
 import { icon, weatherInfo } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,7 +18,9 @@ const api = (path) => token ? `${path}?k=${encodeURIComponent(token)}` : path;
 const state = {
   calendar: load('calendar'),
   weather: load('weather'),
-  ok: { calendar: 0, weather: 0 },
+  photos: load('photos'),
+  ok: { calendar: 0, weather: 0, photos: 0 },
+  failed: {},
 };
 
 // ------------------------------------------------------------------ helpers
@@ -281,8 +284,10 @@ async function refresh(key) {
     state[key] = data;
     // The calendar comes from KV and may be old; trust its sync time, not the fetch time.
     state.ok[key] = data.updated || Date.now();
+    state.failed[key] = false;
     save(key, data);
   } catch (e) {
+    state.failed[key] = true;
     console.warn(`${key} refresh failed`, e);
   }
   renderAll();
@@ -365,36 +370,83 @@ function renderWeatherView() {
     `</div>`;
 }
 
-// ------------------------------------------------------------------ photos view (placeholder)
-// No photo source feeds the office dashboard yet. These gradient slides stand in until one does:
-// replace PHOTOS with [{ src, caption }] entries (and render an <img>) once there's a feed.
+// ------------------------------------------------------------------ photos view: a Flickr album
+// /api/photos returns { album, photos: [{ src, caption }] } for one public album. Only two slide
+// elements exist (showing + next), so the kiosk never holds the whole album in memory; the next
+// image is decoded before it fades in, and the one after that is preloaded.
 
-const PHOTOS = [
-  { bg: 'linear-gradient(135deg, #6E5C99, #2B2140)', caption: 'Photo source not connected' },
-  { bg: 'linear-gradient(135deg, #4B6A9B, #1C2638)', caption: 'Photo source not connected' },
-  { bg: 'linear-gradient(135deg, #5B8A6E, #1E2C24)', caption: 'Photo source not connected' },
-  { bg: 'linear-gradient(135deg, #A65A7B, #3A1D2A)', caption: 'Photo source not connected' },
-];
-let photoIdx = 0, photoTimer = 0;
+const PHOTO_EVERY = 12000;
+let photoOrder = [], photoKey = '', photoIdx = 0, photoTimer = 0, photoFront = 0;
 
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// Keep one shuffled order per page load; reshuffle only when the album's contents change.
+function syncPhotoOrder() {
+  const list = (state.photos && state.photos.photos) || [];
+  const key = list.map((p) => p.src).join('|');
+  if (key === photoKey) return false;
+  photoKey = key;
+  photoOrder = shuffle(list.slice());
+  photoIdx = 0;
+  return true;
+}
+function photoCaption(p) {
+  return (p && p.caption) || (state.photos && state.photos.album) || '';
+}
+function renderPhotoCap() {
+  const p = photoOrder[photoIdx];
+  document.querySelector('.ph-cap .label').textContent =
+    photoOrder.length ? `Photos · ${photoIdx + 1} of ${photoOrder.length}` : 'Photos';
+  document.querySelector('.ph-cap .serif').textContent =
+    p ? photoCaption(p)
+      : state.photos ? 'No photos in the album'
+      : state.failed.photos ? 'Photos unavailable'
+      : 'Loading photos…';
+}
+
+// Called on every renderAll (each data refresh), so only rebuild when the album changed.
 function renderPhotos() {
-  const n = new Date();
+  const changed = syncPhotoOrder();
+  if (!changed && $('view-photos').querySelector('.ph')) { renderPhotoCap(); return; }
+  const p = photoOrder[photoIdx];
+  photoFront = 0;
   $('view-photos').innerHTML =
-    `<div class="ph">${PHOTOS.map((p, i) => `<div class="ph-slide ${i === photoIdx ? 'is-on' : ''}" style="background:${p.bg}"></div>`).join('')}` +
-    `<div class="ph-cap"><div><span class="label">Photos · ${photoIdx + 1} of ${PHOTOS.length}</span><div class="serif">${esc(PHOTOS[photoIdx].caption)}</div></div>` +
-    `<span class="num ph-time">${fmtTime(n, false)}</span></div></div>`;
+    `<div class="ph">` +
+      `<div class="ph-slide is-on">${p ? `<img src="${esc(p.src)}" alt="" decoding="async">` : ''}</div>` +
+      `<div class="ph-slide"><img alt="" decoding="async"></div>` +
+      `<div class="ph-cap"><div><span class="label"></span><div class="serif"></div></div>` +
+      `<span class="num ph-time">${fmtTime(new Date(), false)}</span></div>` +
+    `</div>`;
+  if (!p) $('view-photos').querySelector('.ph-slide').classList.add('ph-empty');
+  renderPhotoCap();
+  preloadPhoto(photoIdx + 1);
+}
+function preloadPhoto(i) {
+  if (photoOrder.length > 1) new Image().src = photoOrder[i % photoOrder.length].src;
+}
+async function nextPhoto() {
+  if (photoOrder.length < 2) return;
+  const slides = document.querySelectorAll('#view-photos .ph-slide');
+  if (slides.length < 2) return;
+  const idx = (photoIdx + 1) % photoOrder.length;
+  const back = slides[1 - photoFront];
+  let img = back.querySelector('img');
+  if (!img) { img = document.createElement('img'); img.alt = ''; back.appendChild(img); }
+  img.src = photoOrder[idx].src;
+  try { await img.decode(); } catch (e) { photoIdx = idx; return; }  // broken image: skip it next time round
+  if (current !== 'photos') return;
+  back.classList.add('is-on');
+  slides[photoFront].classList.remove('is-on');
+  photoFront = 1 - photoFront;
+  photoIdx = idx;
+  renderPhotoCap();
+  preloadPhoto(idx + 1);
 }
 function startPhotos() {
   stopPhotos();
-  photoTimer = setInterval(() => {
-    const slides = document.querySelectorAll('.ph-slide');
-    if (!slides.length) return;
-    slides[photoIdx].classList.remove('is-on');
-    photoIdx = (photoIdx + 1) % PHOTOS.length;
-    slides[photoIdx].classList.add('is-on');
-    document.querySelector('.ph-cap .label').textContent = `Photos · ${photoIdx + 1} of ${PHOTOS.length}`;
-    document.querySelector('.ph-cap .serif').textContent = PHOTOS[photoIdx].caption;
-  }, 12000);
+  photoTimer = setInterval(nextPhoto, PHOTO_EVERY);
 }
 function stopPhotos() { clearInterval(photoTimer); photoTimer = 0; }
 
@@ -502,6 +554,8 @@ refresh('calendar');
 refresh('weather');
 setInterval(() => refresh('calendar'), 5 * MIN);
 setInterval(() => refresh('weather'), 15 * MIN);
+refresh('photos');
+setInterval(() => refresh('photos'), HOUR);
 
 // Tick on the minute: theme (Graphite at night), clock, countdown, past/current rows, and the open view.
 function tick() {

@@ -14,7 +14,11 @@
     // Weather location and IANA time zone (Open-Meteo).
     "LAT": "YOUR_LATITUDE",
     "LON": "YOUR_LONGITUDE",
-    "TZ": "YOUR_TIME_ZONE"
+    "TZ": "YOUR_TIME_ZONE",
+    // Photos view: one public Flickr album, from its URL flickr.com/photos/<user>/albums/<FLICKR_ALBUM_ID>.
+    // FLICKR_USER_ID is optional and must be the numeric NSID (like 12345678@N00), not a custom URL name.
+    "FLICKR_USER_ID": "",
+    "FLICKR_ALBUM_ID": "YOUR_FLICKR_ALBUM_ID"
   },
   // Key "calendar": JSON written every 5 min by the sync job (sync/README.md).
   // Create with `npx wrangler kv namespace create CALENDAR` and paste the id here.
@@ -22,6 +26,7 @@
     { "binding": "CALENDAR", "id": "YOUR_KV_NAMESPACE_ID" }
   ]
   // Secrets (set with `npx wrangler secret put <NAME>`, never committed):
-  //   ACCESS_TOKEN  long random string; the kiosk URL carries it as ?k=<token>
+  //   ACCESS_TOKEN    long random string; the kiosk URL carries it as ?k=<token>
+  //   FLICKR_API_KEY  from flickr.com/services/apps/create (non-commercial key; the secret isn't needed)
   // The calendar feed address lives only in the sync job's env file, never in Cloudflare.
 }
