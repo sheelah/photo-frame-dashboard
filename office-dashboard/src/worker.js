@@ -97,7 +97,10 @@ async function weather(env) {
 // certificate chains to Amazon Root CA 1 / Starfield Services Root G2, which Android 6 doesn't
 // trust, so the frame's WebView refuses images loaded from Flickr directly.
 const SIZES = ['h', 'k', 'l'];
-const FLICKR_IMG = /^https:\/\/live\.staticflickr\.com\/(\d+\/\d+_[0-9a-f]+_[a-z]\.jpg)$/;
+// <server>/<id>_<secret>_<size>.jpg: the only image path shape the API returns or /img/ will proxy.
+const FLICKR_PATH = /\d+\/\d+_[0-9a-f]+_[a-z]\.jpg/.source;
+const FLICKR_IMG = new RegExp(`^https://live\\.staticflickr\\.com/(${FLICKR_PATH})$`);
+const IMG_PATH = new RegExp(`^${FLICKR_PATH}$`);
 
 async function photos(env) {
   if (!env.FLICKR_API_KEY || !env.FLICKR_ALBUM_ID) return json({ error: 'Flickr album not configured' }, 503);
@@ -138,7 +141,7 @@ async function photos(env) {
 // is accepted, so this can't be used to fetch anything else. Images never change at a given URL, so
 // both Cloudflare and the WebView may cache them for a long time.
 async function photoImage(path) {
-  if (!/^\d+\/\d+_[0-9a-f]+_[a-z]\.jpg$/.test(path)) return new Response('Not found', { status: 404 });
+  if (!IMG_PATH.test(path)) return new Response('Not found', { status: 404 });
   const res = await fetch(`https://live.staticflickr.com/${path}`, { cf: { cacheTtl: 30 * 86400, cacheEverything: true } });
   if (!res.ok) return new Response(`flickr image returned ${res.status}`, { status: 502 });
   return new Response(res.body, {
