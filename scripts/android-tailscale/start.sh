@@ -2,6 +2,8 @@
 # Starts tailscaled in userspace mode. Launched at boot from /system/bin/install-recovery.sh.
 D=/data/local/tailscale
 export HOME=$D TMPDIR=/data/local/tmp
+# Block ADB from the LAN before anything else; tailnet ADB arrives over loopback (adb-firewall.sh)
+[ -f $D/adb-firewall.sh ] && sh $D/adb-firewall.sh
 # Already running? (manual start or second invocation)
 ps | grep -q '[/]data/local/tailscale/tailscaled' && exit 0
 [ -f $D/tailscaled.log ] && mv $D/tailscaled.log $D/tailscaled.log.1
