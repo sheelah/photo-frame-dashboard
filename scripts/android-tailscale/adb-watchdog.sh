@@ -13,6 +13,11 @@ log() {
 log "start"
 sleep 120
 while true; do
+  # Re-add the LAN block if something (netd on a network change) dropped it
+  if [ -f $D/adb-firewall.sh ] && ! iptables -C INPUT -j adb_lan_block 2>/dev/null; then
+    log "LAN block for 5555 missing; re-adding"
+    sh $D/adb-firewall.sh
+  fi
   if ! listening; then
     sleep 15
     if ! listening; then
