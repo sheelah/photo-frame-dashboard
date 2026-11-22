@@ -22,15 +22,21 @@ const state = {
   ok: { calendar: 0, weather: 0, photos: 0 },
   failed: {},
 };
+let current = null;  // the view on screen: one of VIEWS
 
 // ------------------------------------------------------------------ helpers
 
+// localStorage can throw (blocked, full); fall back quietly. Data is JSON, settings are raw strings.
+function loadRaw(key, fallback) {
+  try { const v = localStorage.getItem(key); return v == null ? fallback : v; } catch (e) { return fallback; }
+}
+function saveRaw(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* storage full or blocked */ }
+}
 function load(key) {
-  try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+  try { return JSON.parse(loadRaw(key, null)); } catch (e) { return null; }
 }
-function save(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage full or blocked */ }
-}
+function save(key, value) { saveRaw(key, JSON.stringify(value)); }
 function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
@@ -44,18 +50,21 @@ function dayKey(t) {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const ampm = (t) => (new Date(t).getHours() < 12 ? 'AM' : 'PM');
 function fmtTime(t, withAmPm = true) {
   const d = new Date(t);
   const h = d.getHours() % 12 || 12;
   const m = String(d.getMinutes()).padStart(2, '0');
-  return withAmPm ? `${h}:${m} ${d.getHours() < 12 ? 'AM' : 'PM'}` : `${h}:${m}`;
+  return withAmPm ? `${h}:${m} ${ampm(t)}` : `${h}:${m}`;
 }
 function fmtRange(ev) {
-  const sameHalf = new Date(ev.start).getHours() < 12 === new Date(ev.end).getHours() < 12;
+  const sameHalf = ampm(ev.start) === ampm(ev.end);
   return `${fmtTime(ev.start, !sameHalf)} – ${fmtTime(ev.end)}`;
 }
-const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const shortDay = (t) => WEEKDAY[new Date(t).getDay()].slice(0, 3);               // "Fri"
+const shortDate = (t) => `${MONTH[new Date(t).getMonth()].slice(0, 3)} ${new Date(t).getDate()}`;  // "Nov 20"
 
 // ------------------------------------------------------------------ colour themes
 // Same palettes as Home HQ (css/style.css). The saved theme is the day choice; from sunset to
@@ -69,8 +78,6 @@ const THEMES = [
   { id: 'clay', name: 'Clay', sw: ['#F1E3D6', '#2B150D'] },
   { id: 'graphite', name: 'Graphite', sw: ['#161719', '#EDE8DE'] },
 ];
-function loadRaw(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
-function saveRaw(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
 let chosenTheme = loadRaw('office.theme', 'paper');
 if (!THEMES.some((t) => t.id === chosenTheme)) chosenTheme = 'paper';
 let autoNight = loadRaw('office.nightTheme', '1') === '1';
@@ -113,50 +120,65 @@ function setAutoNight(on) { autoNight = on; saveRaw('office.nightTheme', on ? '1
 function renderClock() {
   const n = new Date();
   $('time').textContent = fmtTime(n, false);
-  $('ampm').textContent = n.getHours() < 12 ? 'AM' : 'PM';
+  $('ampm').textContent = ampm(n);
   $('weekday').textContent = WEEKDAY[n.getDay()];
   $('date').textContent = `${MONTH[n.getMonth()]} ${n.getDate()}`;
-  $('railClock').innerHTML = `<b>${fmtTime(n, false)}</b><span>${n.getHours() < 12 ? 'AM' : 'PM'}</span>`;
+  $('railClock').innerHTML = `<b>${fmtTime(n, false)}</b><span>${ampm(n)}</span>`;
   applyTheme();
 }
 
-// ------------------------------------------------------------------ weather
+// ------------------------------------------------------------------ weather (shared by Today and the Weather view)
+
+const deg = (n) => `${Math.round(n)}°`;
+const chance = (p) => (p >= 20 ? `${p}%` : '');  // precipitation, only when worth noting
+
+// Index of the hourly entry covering now, so lists start with the current hour.
+function firstHour(h) {
+  const nowMs = Date.now();
+  const i = h.time.findIndex((t) => new Date(t).getTime() + HOUR > nowMs);
+  return i < 0 ? 0 : i;
+}
+// "NOW" for the current hour, else "3P".
+function hourLabel(h, i, first) {
+  return i === first ? 'NOW' : fmtTime(h.time[i]).replace(':00 ', '').replace('AM', 'A').replace('PM', 'P');
+}
+// The condition, today's high/low, feels-like and wind, beside the big temperature.
+function nowDesc(W, extra = '') {
+  const c = W.current, d = W.daily;
+  return `<div class="w-desc"><span class="cond">${esc(weatherInfo(c.weather_code, c.is_day).label)}</span>` +
+    `<span class="hl">H ${deg(d.temperature_2m_max[0])} · L ${deg(d.temperature_2m_min[0])}</span>` +
+    `<span class="hl">Feels ${deg(c.apparent_temperature)} · Wind ${Math.round(c.wind_speed_10m)} mph</span>${extra}</div>`;
+}
+// The first `count` daily forecast rows, starting with today.
+function dayRows(d, count, cls, size) {
+  const rows = [];
+  for (let i = 0; i < Math.min(count, d.time.length); i++) {
+    const p = d.precipitation_probability_max[i];
+    rows.push(`<div class="${cls}"><span class="d">${i === 0 ? 'Today' : shortDay(`${d.time[i]}T12:00`)}</span>` +
+      `${icon(weatherInfo(d.weather_code[i], 1).icon, size)}<span class="p">${chance(p)}</span>` +
+      `<span class="hi">${deg(d.temperature_2m_max[i])}</span><span class="lo">${deg(d.temperature_2m_min[i])}</span></div>`);
+  }
+  return rows.join('');
+}
 
 function renderWeather() {
   const W = state.weather;
   if (!W || !W.current) { $('weather').innerHTML = ''; return; }
-  const c = W.current, d = W.daily, h = W.hourly;
-  const now = weatherInfo(c.weather_code, c.is_day);
+  const c = W.current, h = W.hourly;
 
   // Hourly: the next 7 hours starting with the current one.
-  const nowMs = Date.now();
-  let first = h.time.findIndex((t) => new Date(t).getTime() + HOUR > nowMs);
-  if (first < 0) first = 0;
+  const first = firstHour(h);
   const hours = [];
   for (let i = first; i < Math.min(first + 7, h.time.length); i++) {
     const info = weatherInfo(h.weather_code[i], h.is_day[i]);
-    const p = h.precipitation_probability[i];
-    const label = i === first ? 'NOW' : fmtTime(h.time[i]).replace(':00 ', '').replace('AM', 'A').replace('PM', 'P');
-    hours.push(`<div><span class="h">${label}</span>${icon(info.icon, 28)}<span class="t">${Math.round(h.temperature_2m[i])}°</span><span class="p">${p >= 20 ? p + '%' : ''}</span></div>`);
-  }
-
-  // Daily: today plus the next 4 days.
-  const days = [];
-  for (let i = 0; i < Math.min(5, d.time.length); i++) {
-    const info = weatherInfo(d.weather_code[i], 1);
-    const date = new Date(`${d.time[i]}T12:00`);
-    const p = d.precipitation_probability_max[i];
-    days.push(`<div class="w-day"><span class="d">${i === 0 ? 'Today' : WEEKDAY[date.getDay()].slice(0, 3)}</span>${icon(info.icon, 30)}<span class="p">${p >= 20 ? p + '%' : ''}</span><span class="hi">${Math.round(d.temperature_2m_max[i])}°</span><span class="lo">${Math.round(d.temperature_2m_min[i])}°</span></div>`);
+    hours.push(`<div><span class="h">${hourLabel(h, i, first)}</span>${icon(info.icon, 28)}<span class="t">${deg(h.temperature_2m[i])}</span><span class="p">${chance(h.precipitation_probability[i])}</span></div>`);
   }
 
   $('weather').innerHTML =
-    `<div class="w-now">${icon(now.icon, 84)}<span class="num w-temp">${Math.round(c.temperature_2m)}°</span>` +
-      `<div class="w-desc"><span class="cond">${esc(now.label)}</span>` +
-      `<span class="hl">H ${Math.round(d.temperature_2m_max[0])}° · L ${Math.round(d.temperature_2m_min[0])}°</span>` +
-      `<span class="hl">Feels ${Math.round(c.apparent_temperature)}° · Wind ${Math.round(c.wind_speed_10m)} mph</span></div></div>` +
+    `<div class="w-now">${icon(weatherInfo(c.weather_code, c.is_day).icon, 84)}<span class="num w-temp">${deg(c.temperature_2m)}</span>${nowDesc(W)}</div>` +
     `<div class="w-note serif">${esc(weatherNote(W))}</div>` +
     `<div class="w-hours">${hours.join('')}</div>` +
-    `<div class="w-days">${days.join('')}</div>`;
+    `<div class="w-days">${dayRows(W.daily, 5, 'w-day', 30)}</div>`;
 }
 
 // One line of advice from the next 12 hours.
@@ -182,39 +204,42 @@ function weatherNote(W) {
 
 // ------------------------------------------------------------------ calendar
 
+const allEvents = () => (state.calendar && state.calendar.events) || [];
+
+// Everything on one local day: all-day events first, then timed ones overlapping it (sorted by
+// start, as the sync job writes them).
 function eventsOn(dayStart) {
-  const events = (state.calendar && state.calendar.events) || [];
   const dayEnd = addDays(dayStart, 1);
   const key = dayKey(dayStart);
-  const allDay = events.filter((e) => e.allDay && e.date <= key && key < e.endDate);
-  const timed = events.filter((e) => !e.allDay && e.start < dayEnd && e.end > dayStart);
-  return { allDay, timed };
+  const events = allEvents();
+  return events.filter((e) => e.allDay && e.date <= key && key < e.endDate)
+    .concat(events.filter((e) => !e.allDay && e.start < dayEnd && e.end > dayStart));
+}
+// 'past', 'now' or '' for a timed event; all-day events are never past or current.
+function eventPhase(e, nowMs) {
+  if (e.allDay) return '';
+  return e.end <= nowMs ? 'past' : e.start <= nowMs ? 'now' : '';
 }
 
 function renderNext() {
-  const events = ((state.calendar && state.calendar.events) || []).filter((e) => !e.allDay);
+  const el = $('next');
+  const empty = (title, meta) => {
+    el.className = 'next empty';
+    el.innerHTML = `<span class="label">Next up</span><div><div class="title">${title}</div><div class="meta">${meta}</div></div>`;
+  };
+  if (!state.calendar) return empty('Calendar not connected', 'Waiting for calendar data.');
+
+  const events = allEvents().filter((e) => !e.allDay);
   const nowMs = Date.now();
   const current = events.filter((e) => e.start <= nowMs && e.end > nowMs);
-  const upcoming = events.filter((e) => e.start > nowMs);
-  const next = upcoming[0];
-  const el = $('next');
+  const next = events.find((e) => e.start > nowMs);
 
   // Prefer the next meeting if it starts within 10 minutes; otherwise show what's on now.
   let ev, mode;
   if (next && next.start - nowMs <= 10 * MIN) { ev = next; mode = 'soon'; }
   else if (current.length) { ev = current[current.length - 1]; mode = 'now'; }
   else if (next) { ev = next; mode = 'soon'; }
-
-  if (!state.calendar) {
-    el.className = 'next empty';
-    el.innerHTML = `<span class="label">Next up</span><div><div class="title">Calendar not connected</div><div class="meta">Waiting for calendar data.</div></div>`;
-    return;
-  }
-  if (!ev) {
-    el.className = 'next empty';
-    el.innerHTML = `<span class="label">Next up</span><div><div class="title">Nothing scheduled</div><div class="meta">The next week is clear.</div></div>`;
-    return;
-  }
+  if (!ev) return empty('Nothing scheduled', 'The next week is clear.');
 
   let num, unit, label;
   if (mode === 'now') {
@@ -228,7 +253,7 @@ function renderNext() {
     if (mins < 60) [num, unit] = [mins, 'min'];
     else if (sameDay || mins < 12 * 60) [num, unit] = [Math.round(mins / 60), Math.round(mins / 60) === 1 ? 'hour' : 'hours'];
     else if (startOfDay(ev.start) === addDays(startOfDay(nowMs), 1)) [num, unit] = [fmtTime(ev.start, false), 'tomorrow'];
-    else [num, unit] = [WEEKDAY[new Date(ev.start).getDay()].slice(0, 3), fmtTime(ev.start)];
+    else [num, unit] = [shortDay(ev.start), fmtTime(ev.start)];
   }
 
   el.className = `next ${mode === 'now' ? 'now' : ''}`;
@@ -252,8 +277,7 @@ function renderAgenda() {
   for (let offset = 0; offset < 7 && extra > 0; offset++) {
     const cap = offset === 0 ? 6 : offset === 1 ? 4 : 3;
     const day = addDays(today, offset);
-    const { allDay, timed } = eventsOn(day);
-    const items = allDay.map((e) => ({ e, all: true })).concat(timed.map((e) => ({ e, all: false })));
+    const items = eventsOn(day);
     if (offset >= 2) {
       if (!items.length) continue;
       if (budget <= 0) break;
@@ -263,11 +287,12 @@ function renderAgenda() {
     const shown = items.slice(0, limit);
     budget -= Math.max(1, shown.length);
 
-    const name = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : WEEKDAY[new Date(day).getDay()];
-    const sub = offset <= 1 ? `${WEEKDAY[new Date(day).getDay()]}, ${MONTH[new Date(day).getMonth()].slice(0, 3)} ${new Date(day).getDate()}` : `${MONTH[new Date(day).getMonth()].slice(0, 3)} ${new Date(day).getDate()}`;
-    const rows = shown.map(({ e, all }) => {
-      const cls = all ? '' : e.end <= nowMs ? 'past' : e.start <= nowMs ? 'current' : '';
-      const when = all ? 'All day' : e.start < day ? 'cont.' : fmtTime(e.start);
+    const weekday = WEEKDAY[new Date(day).getDay()];
+    const name = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : weekday;
+    const sub = offset <= 1 ? `${weekday}, ${shortDate(day)}` : shortDate(day);
+    const rows = shown.map((e) => {
+      const cls = { past: 'past', now: 'current' }[eventPhase(e, nowMs)] || '';
+      const when = e.allDay ? 'All day' : e.start < day ? 'cont.' : fmtTime(e.start);
       return `<div class="ev ${cls}"><span class="when">${when}</span><span class="what">${esc(e.title)}${e.location ? `<span class="where">${esc(e.location)}</span>` : ''}</span></div>`;
     }).join('');
     const more = items.length > shown.length ? `<div class="more">+${items.length - shown.length} more</div>` : '';
@@ -324,23 +349,20 @@ function renderCalendarView() {
   }
   const nowMs = Date.now();
   const today = startOfDay(nowMs);
-  const last = addDays(today, 6);
-  const range = `${MONTH[new Date(today).getMonth()].slice(0, 3)} ${new Date(today).getDate()} – ${MONTH[new Date(last).getMonth()].slice(0, 3)} ${new Date(last).getDate()}`;
+  const range = `${shortDate(today)} – ${shortDate(addDays(today, 6))}`;
+  const CAP = 7;  // cards per day column
   const cols = [];
   for (let i = 0; i < 7; i++) {
     const day = addDays(today, i);
-    const d = new Date(day);
-    const { allDay, timed } = eventsOn(day);
-    const items = allDay.map((e) => ({ e, all: true })).concat(timed.map((e) => ({ e, all: false })));
-    const CAP = 7;
-    const cards = items.slice(0, CAP).map(({ e, all }) => {
-      const cls = all ? 'is-all' : e.end <= nowMs ? 'is-past' : e.start <= nowMs ? 'is-now' : '';
-      const when = all ? 'All day' : e.start < day ? 'Cont.' : fmtTime(e.start);
+    const items = eventsOn(day);
+    const cards = items.slice(0, CAP).map((e) => {
+      const cls = e.allDay ? 'is-all' : { past: 'is-past', now: 'is-now' }[eventPhase(e, nowMs)] || '';
+      const when = e.allDay ? 'All day' : e.start < day ? 'Cont.' : fmtTime(e.start);
       return `<div class="cal-ev ${cls}"><b>${when}</b><span>${esc(e.title)}</span></div>`;
     }).join('');
     const more = items.length > CAP ? `<div class="cal-more">+${items.length - CAP} more</div>` : '';
     const none = items.length ? '' : `<div class="cal-none">Free</div>`;
-    cols.push(`<div class="cal-day ${i === 0 ? 'is-today' : ''}"><div class="cal-dh"><span class="label">${i === 0 ? 'Today' : WEEKDAY[d.getDay()].slice(0, 3)}</span><span class="num">${d.getDate()}</span></div>${cards}${none}${more}</div>`);
+    cols.push(`<div class="cal-day ${i === 0 ? 'is-today' : ''}"><div class="cal-dh"><span class="label">${i === 0 ? 'Today' : shortDay(day)}</span><span class="num">${new Date(day).getDate()}</span></div>${cards}${none}${more}</div>`);
   }
   el.innerHTML = `<div class="cal"><div class="v-head"><h1>This week</h1><span class="sub">${range}</span></div><div class="cal-week">${cols.join('')}</div></div>`;
 }
@@ -352,42 +374,27 @@ function renderWeatherView() {
   const W = state.weather;
   if (!W || !W.current) { el.innerHTML = `<div class="v-head"><h1>Weather</h1></div><div class="wx-empty">Waiting for weather data.</div>`; return; }
   const c = W.current, d = W.daily, h = W.hourly;
-  const now = weatherInfo(c.weather_code, c.is_day);
-  const nowMs = Date.now();
 
-  let first = h.time.findIndex((t) => new Date(t).getTime() + HOUR > nowMs);
-  if (first < 0) first = 0;
+  // Next 12 hours, each with a bar scaled between the period's low and high.
+  const first = firstHour(h);
   const end = Math.min(first + 12, h.time.length);
   const temps = h.temperature_2m.slice(first, end);
   const lo = Math.min(...temps), span = Math.max(1, Math.max(...temps) - lo);
   const hours = [];
   for (let i = first; i < end; i++) {
     const info = weatherInfo(h.weather_code[i], h.is_day[i]);
-    const p = h.precipitation_probability[i];
-    const label = i === first ? 'NOW' : fmtTime(h.time[i]).replace(':00 ', '').replace('AM', 'A').replace('PM', 'P');
     const bar = 24 + Math.round(((h.temperature_2m[i] - lo) / span) * 110);
-    hours.push(`<div class="wx-h"><span class="t">${Math.round(h.temperature_2m[i])}°</span><i class="wx-bar" style="height:${bar}px"></i>${icon(info.icon, 30)}<span class="p">${p >= 20 ? p + '%' : ''}</span><span class="h">${label}</span></div>`);
-  }
-
-  const days = [];
-  for (let i = 0; i < Math.min(6, d.time.length); i++) {
-    const info = weatherInfo(d.weather_code[i], 1);
-    const date = new Date(`${d.time[i]}T12:00`);
-    const p = d.precipitation_probability_max[i];
-    days.push(`<div class="wx-day"><span class="d">${i === 0 ? 'Today' : WEEKDAY[date.getDay()].slice(0, 3)}</span>${icon(info.icon, 34)}<span class="p">${p >= 20 ? p + '%' : ''}</span><span class="hi">${Math.round(d.temperature_2m_max[i])}°</span><span class="lo">${Math.round(d.temperature_2m_min[i])}°</span></div>`);
+    hours.push(`<div class="wx-h"><span class="t">${deg(h.temperature_2m[i])}</span><i class="wx-bar" style="height:${bar}px"></i>${icon(info.icon, 30)}<span class="p">${chance(h.precipitation_probability[i])}</span><span class="h">${hourLabel(h, i, first)}</span></div>`);
   }
   const sun = (k) => (d[k] && d[k][0] ? fmtTime(d[k][0]) : '–');
 
   el.innerHTML =
     `<div class="wx">` +
-      `<div class="wx-now">${icon(now.icon, 120)}<span class="num w-temp">${Math.round(c.temperature_2m)}°</span>` +
-        `<div class="w-desc"><span class="cond">${esc(now.label)}</span>` +
-        `<span class="hl">H ${Math.round(d.temperature_2m_max[0])}° · L ${Math.round(d.temperature_2m_min[0])}°</span>` +
-        `<span class="hl">Feels ${Math.round(c.apparent_temperature)}° · Wind ${Math.round(c.wind_speed_10m)} mph</span>` +
-        `<span class="hl serif">${esc(weatherNote(W))}</span></div></div>` +
+      `<div class="wx-now">${icon(weatherInfo(c.weather_code, c.is_day).icon, 120)}<span class="num w-temp">${deg(c.temperature_2m)}</span>` +
+        `${nowDesc(W, `<span class="hl serif">${esc(weatherNote(W))}</span>`)}</div>` +
       `<div class="wx-sun"><div><span class="label">Sunrise</span><b>${sun('sunrise')}</b></div><div><span class="label">Sunset</span><b>${sun('sunset')}</b></div></div>` +
       `<div class="wx-hours"><span class="label">Next 12 hours</span><div class="wx-hgrid">${hours.join('')}</div></div>` +
-      `<div class="wx-days">${days.join('')}</div>` +
+      `<div class="wx-days">${dayRows(d, 6, 'wx-day', 34)}</div>` +
     `</div>`;
 }
 
@@ -483,7 +490,6 @@ $('view-photos').addEventListener('pointerdown', (e) => {
 
 // ------------------------------------------------------------------ views + idle
 
-let current = null;
 function go(name) {
   if (!VIEWS.includes(name)) name = 'today';
   if (name === current) return;
@@ -503,7 +509,7 @@ function renderCurrent() {
 
 let lastTouch = Date.now();
 setInterval(() => {
-  if (current !== 'today' && !$('settings').classList.contains('is-open') && Date.now() - lastTouch >= IDLE_HOME) go('today');
+  if (current !== 'today' && !settingsOpen() && Date.now() - lastTouch >= IDLE_HOME) go('today');
 }, 5000);
 
 // ------------------------------------------------------------------ display settings (hold the rail clock, or press S)
@@ -519,6 +525,7 @@ function settingsHTML() {
     `<button data-autonight class="${autoNight ? 'is-on' : ''}">Graphite at night${autoNight ? ' ✓' : ''}</button></div>` +
     `${nightNote}<p class="set-note">Graphite at night runs from sunset to sunrise (today ${fmtMin(sunNow.set)} – ${fmtMin(sunNow.rise)}). Keys: 1–4 views · T theme · S settings.</p></div>`;
 }
+const settingsOpen = () => $('settings').classList.contains('is-open');
 function openSettings() { $('settings').innerHTML = settingsHTML(); $('settings').classList.add('is-open'); }
 function closeSettings() { $('settings').classList.remove('is-open'); }
 function cycleTheme() {
@@ -564,8 +571,8 @@ document.addEventListener('keydown', (e) => {
   lastTouch = Date.now();
   const k = e.key.toLowerCase();
   if (k >= '1' && k <= String(VIEWS.length)) go(VIEWS[+k - 1]);
-  if (k === 't') { cycleTheme(); if ($('settings').classList.contains('is-open')) openSettings(); }
-  if (k === 's') { $('settings').classList.contains('is-open') ? closeSettings() : openSettings(); }
+  if (k === 't') { cycleTheme(); if (settingsOpen()) openSettings(); }
+  if (k === 's') { if (settingsOpen()) closeSettings(); else openSettings(); }
   if (k === 'escape') closeSettings();
 });
 
@@ -582,25 +589,25 @@ function renderAll() {
 
 go(location.hash.slice(1) || 'today');
 renderAll();
-refresh('calendar');
-refresh('weather');
-setInterval(() => refresh('calendar'), 5 * MIN);
-setInterval(() => refresh('weather'), 15 * MIN);
-refresh('photos');
-setInterval(() => refresh('photos'), HOUR);
+const REFRESH_EVERY = { calendar: 5 * MIN, weather: 15 * MIN, photos: HOUR };
+for (const [key, every] of Object.entries(REFRESH_EVERY)) {
+  refresh(key);
+  setInterval(() => refresh(key), every);
+}
 
-// Tick on the minute: theme (Graphite at night), clock, countdown, past/current rows, and the open view.
+// Tick on the minute: clock (and with it the theme, for Graphite at night), countdown,
+// past/current rows, and the open view.
+const untilNextMinute = () => MIN - (Date.now() % MIN) + 50;
 function tick() {
-  applyTheme();
   renderClock();
   renderNext();
   renderAgenda();
   renderStatus();
   if (current === 'calendar') renderCalendarView();
   if (current === 'photos') document.querySelector('.ph-time').textContent = fmtTime(new Date(), false);
-  setTimeout(tick, MIN - (Date.now() % MIN) + 50);
+  setTimeout(tick, untilNextMinute());
 }
-setTimeout(tick, MIN - (Date.now() % MIN) + 50);
+setTimeout(tick, untilNextMinute());
 
 // Reload once a night to clear any WebView memory growth.
 setTimeout(() => location.reload(), addDays(startOfDay(Date.now()), 1) + 3 * HOUR - Date.now());
@@ -612,7 +619,7 @@ const assetSet = (list) => list.filter((p) => p && p.indexOf('/assets/') !== -1)
 const loadedAssets = assetSet([...document.querySelectorAll('script[src], link[rel="stylesheet"][href]')]
   .map((el) => el.getAttribute('src') || el.getAttribute('href')));
 async function checkForDeploy() {
-  if (!loadedAssets || current !== 'today' || $('settings').classList.contains('is-open')) return;
+  if (!loadedAssets || current !== 'today' || settingsOpen()) return;
   if (Date.now() - Number(loadRaw('office.lastReload', '0')) < 10 * MIN) return;
   try {
     const res = await fetch(api('/'), { cache: 'no-store' });
