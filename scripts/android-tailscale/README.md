@@ -22,6 +22,13 @@ Tested on a Dragon Touch Classic10 Charm (Android 6.0.1, Allwinner A33) with Tai
   loopback, for IPv4 and IPv6, in an `adb_lan_block` chain at the top of `INPUT`. Tailnet ADB
   still works because `tailscale serve` connects to `127.0.0.1:5555`. `start.sh` runs it at
   boot when the file is present. Safe to run repeatedly.
+- `wifi-watchdog.sh` (optional): every 30 s, checks that `wlan0` has an IPv4 address and
+  (once the gateway has answered a ping) that the gateway still answers. After 2 min unhealthy
+  it toggles Wi-Fi with `svc wifi` (the Classic10 has no `wpa_cli`), again at 6 min, and
+  after 15 min it reboots, but not again until Wi-Fi
+  has recovered once. Logs to `wifi-watchdog.log`. Written for the Classic10's ESP8089, where
+  Android once disabled the network and stayed offline for 2.5 h while still scanning.
+  `start.sh` starts it when the file is present.
 - Optional: if `/data/local/tailscale/kioskwatch.sh` exists, `start.sh` starts it too. Copy it
   from [scripts/kioskwatch](../kioskwatch/README.md); this needs no extra `/system` change.
 
